@@ -372,6 +372,31 @@ async def handle_escalate_to_human(args: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tool: end_call
+# ---------------------------------------------------------------------------
+
+
+async def handle_end_call(args: dict[str, Any]) -> str:
+    """End the voice call gracefully after the patient says goodbye.
+
+    Args:
+        args: Dict with key ``reason`` (str) describing why the call ended.
+
+    Returns:
+        JSON string confirming the call has ended.
+    """
+    reason: str = args.get("reason", "Patient ended the conversation")
+
+    logger.info("Tool end_call | reason={!r}", reason)
+
+    return json.dumps({
+        "ended": True,
+        "reason": reason,
+        "message": "Thank you for calling Sunrise Health Clinic. Goodbye!",
+    })
+
+
+# ---------------------------------------------------------------------------
 # Tool definitions (OpenAI function-calling schema)
 # ---------------------------------------------------------------------------
 
@@ -539,6 +564,30 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "end_call",
+            "description": (
+                "End the phone call gracefully. Call this AFTER you have said "
+                "your farewell message when the patient says goodbye, thanks you, "
+                "says 'that will be all', or indicates they have no more questions."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": (
+                            "Brief reason the call is ending "
+                            "(e.g. 'Patient said goodbye')."
+                        ),
+                    },
+                },
+                "required": ["reason"],
+            },
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -554,4 +603,5 @@ TOOL_HANDLERS: dict[
     "cancel_appointment": handle_cancel_appointment,
     "search_clinic_info": handle_search_clinic_info,
     "escalate_to_human": handle_escalate_to_human,
+    "end_call": handle_end_call,
 }

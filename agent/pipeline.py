@@ -21,11 +21,13 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
 from loguru import logger
 
+from pipecat.frames.frames import EndFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -36,6 +38,7 @@ from pipecat.services.kokoro.tts import KokoroTTSService
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
 from agent.config import settings
+from agent.flows import ConversationContext
 from agent.prompts import SYSTEM_PROMPT
 from agent.tools import TOOL_DEFINITIONS, TOOL_HANDLERS
 
@@ -55,7 +58,8 @@ GREETING_MESSAGE: str = (
 
 async def create_pipeline(
     transport: SmallWebRTCTransport,
-) -> tuple[PipelineTask, PipelineRunner]:
+    conversation_ctx: ConversationContext | None = None,
+) -> tuple[PipelineTask, PipelineRunner, OpenAILLMContext]:
     """Create and configure the full voice pipeline.
 
     Builds the chain: transport.input -> STT -> context_aggregator.user ->
@@ -69,10 +73,14 @@ async def create_pipeline(
         transport: A ``SmallWebRTCTransport`` instance that has been
             pre-configured with VAD parameters and is ready to receive
             an SDP offer.
+        conversation_ctx: Optional conversation context for tracking tool
+            usage, escalation, and other metadata during the call.
 
     Returns:
-        A ``(PipelineTask, PipelineRunner)`` tuple.  The caller should
-        await ``runner.run(task)`` to start processing audio.
+        A ``(PipelineTask, PipelineRunner, OpenAILLMContext)`` tuple.
+        The caller should await ``runner.run(task)`` to start processing
+        audio.  After the pipeline ends, the ``OpenAILLMContext`` contains
+        all conversation messages for transcript extraction.
 
     Raises:
         RuntimeError: If a required Pipecat service fails to initialise.
@@ -169,6 +177,12 @@ async def create_pipeline(
             json.dumps(arguments)[:200],
         )
 
+        # Track tool usage in conversation context
+        if conversation_ctx is not None:
+            conversation_ctx.record_tool_use(function_name)
+            if function_name == "escalate_to_human":
+                conversation_ctx.mark_escalated()
+
         handler = TOOL_HANDLERS.get(function_name)
         if handler is None:
             logger.warning("No handler for tool {!r}", function_name)
@@ -194,6 +208,16 @@ async def create_pipeline(
         )
 
         await result_callback(result_str)
+
+        # If end_call was invoked, schedule a graceful pipeline shutdown
+        # after a short delay so Maya's farewell speech can finish playing.
+        if function_name == "end_call":
+            async def _end_pipeline_after_farewell() -> None:
+                await asyncio.sleep(4)
+                logger.info("end_call: sending EndFrame to stop pipeline")
+                await task.queue_frames([EndFrame()])
+
+            asyncio.create_task(_end_pipeline_after_farewell())
 
     # Register each tool handler with the LLM service
     for tool_def in TOOL_DEFINITIONS:
@@ -238,4 +262,4 @@ async def create_pipeline(
     runner = PipelineRunner()
 
     logger.info("Pipeline factory complete -- ready to run")
-    return task, runner
+    return task, runner, context

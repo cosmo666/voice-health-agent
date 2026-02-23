@@ -3,14 +3,14 @@
 This is the entry point for the Pipecat voice agent.  It exposes a FastAPI
 application with two responsibilities:
 
-1. **Static UI** -- Mounts the ``pipecat-ai-small-webrtc-prebuilt`` frontend
-   at ``/client`` so patients can open ``http://localhost:7860`` in Chrome,
-   click "Connect", and start talking to Maya.
+1. **Static UI** -- Serves a custom audio-only WebRTC client at ``/client``
+   so patients can open ``http://localhost:7860`` in Chrome, click "Connect",
+   and start talking to Maya.  No video or screen sharing.
 
-2. **WebRTC signaling** -- ``POST /api/offer`` accepts an SDP offer from the
-   browser, creates a full voice pipeline (VAD -> STT -> LLM -> TTS), and
-   returns an SDP answer.  The pipeline then runs in the background,
-   streaming audio bidirectionally over the P2P connection.
+2. **WebRTC signaling** -- ``POST /sessions/{id}/api/offer`` accepts an SDP
+   offer from the browser, creates a full voice pipeline (VAD -> STT -> LLM
+   -> TTS), and returns an SDP answer.  The pipeline then runs in the
+   background, streaming audio bidirectionally over the P2P connection.
 
 Start with::
 
@@ -20,11 +20,14 @@ Start with::
 from __future__ import annotations
 
 import asyncio
+import pathlib
+import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
@@ -61,27 +64,12 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# Mount the prebuilt WebRTC client UI
+# Mount the custom audio-only WebRTC client UI
 # ---------------------------------------------------------------------------
 
-try:
-    from pipecat_ai_small_webrtc_prebuilt.frontend import SmallWebRTCPrebuiltUI
-
-    # SmallWebRTCPrebuiltUI is already an instantiated Starlette StaticFiles app
-    app.mount("/client", SmallWebRTCPrebuiltUI)
-    logger.info("Mounted SmallWebRTCPrebuiltUI at /client")
-except ImportError:
-    logger.warning(
-        "pipecat-ai-small-webrtc-prebuilt not installed -- "
-        "/client UI will not be available.  Install with: "
-        "pip install pipecat-ai-small-webrtc-prebuilt"
-    )
-except Exception as exc:
-    logger.warning(
-        "Failed to mount SmallWebRTCPrebuiltUI: {} -- "
-        "The /client path will return 404.",
-        exc,
-    )
+_STATIC_DIR = pathlib.Path(__file__).parent / "static"
+app.mount("/client", StaticFiles(directory=str(_STATIC_DIR), html=True), name="client")
+logger.info("Mounted custom audio-only WebRTC UI at /client")
 
 # ---------------------------------------------------------------------------
 # Active sessions registry (for graceful shutdown and monitoring)
@@ -130,8 +118,24 @@ async def health() -> JSONResponse:
     )
 
 
-@app.post("/api/offer")
-async def offer(request: Request) -> JSONResponse:
+@app.post("/start")
+async def start_session(request: Request) -> JSONResponse:
+    """Create a new voice agent session.
+
+    The prebuilt SmallWebRTC UI calls this endpoint first. It returns a
+    ``session_id`` which the UI uses to build the SDP offer URL:
+    ``/sessions/{session_id}/api/offer``.
+
+    Returns:
+        JSON with ``session_id`` (string).
+    """
+    session_id = str(uuid.uuid4())
+    logger.info("New session created: {}", session_id)
+    return JSONResponse(content={"session_id": session_id})
+
+
+@app.post("/sessions/{session_id}/api/offer")
+async def offer(session_id: str, request: Request) -> JSONResponse:
     """Handle a WebRTC SDP offer from the browser client.
 
     This endpoint performs the following sequence:
@@ -139,8 +143,11 @@ async def offer(request: Request) -> JSONResponse:
     1. Parses the SDP offer from the request body.
     2. Uses ``SmallWebRTCRequestHandler`` to manage the WebRTC connection.
     3. In the connection callback, creates a ``SmallWebRTCTransport`` with
-       Silero VAD, builds the full voice pipeline, and runs it.
+       Silero VAD, builds the full voice pipeline (audio only), and runs it.
     4. Returns the SDP answer so the browser can complete the P2P connection.
+
+    Args:
+        session_id: The session ID returned by ``POST /start``.
 
     Request Body:
         JSON with ``sdp`` (string), ``type`` (string), and optionally ``pc_id``.
@@ -151,7 +158,7 @@ async def offer(request: Request) -> JSONResponse:
     try:
         body = await request.json()
     except Exception:
-        logger.error("Malformed JSON in /api/offer request body")
+        logger.error("Malformed JSON in offer request body")
         return JSONResponse(
             status_code=400,
             content={"error": "Invalid JSON in request body"},
@@ -162,14 +169,15 @@ async def offer(request: Request) -> JSONResponse:
     pc_id: str | None = body.get("pc_id")
 
     if not sdp:
-        logger.error("Missing 'sdp' field in /api/offer request")
+        logger.error("Missing 'sdp' field in offer request")
         return JSONResponse(
             status_code=400,
             content={"error": "Missing required 'sdp' field"},
         )
 
     logger.info(
-        "Received WebRTC offer | type={} sdp_length={} pc_id={}",
+        "Received WebRTC offer | session={} type={} sdp_length={} pc_id={}",
+        session_id,
         offer_type,
         len(sdp),
         pc_id,
@@ -185,7 +193,8 @@ async def offer(request: Request) -> JSONResponse:
         async def _on_connection(webrtc_connection: SmallWebRTCConnection) -> None:
             """Callback invoked when a new WebRTC connection is created.
 
-            Builds the full voice pipeline and runs it in a background task.
+            Builds the full voice pipeline (audio only) and runs it in a
+            background task.
             """
             logger.info("New WebRTC connection: {}", webrtc_connection.pc_id)
 
@@ -199,10 +208,12 @@ async def offer(request: Request) -> JSONResponse:
                 )
             )
 
-            # -- Build transport parameters ------------------------------------
+            # -- Build transport parameters (audio only, no video) --------------
             transport_params = TransportParams(
                 audio_in_enabled=True,
                 audio_out_enabled=True,
+                video_in_enabled=False,
+                video_out_enabled=False,
                 vad_enabled=True,
                 vad_analyzer=vad_analyzer,
             )
@@ -234,13 +245,15 @@ async def offer(request: Request) -> JSONResponse:
                 params=transport_params,
             )
 
-            # -- Create the full voice pipeline ---------------------------------
-            task, runner = await create_pipeline(transport)
-
             # -- Create conversation context for this session -------------------
             conversation_ctx = ConversationContext()
-            session_id = webrtc_connection.pc_id or str(id(task))
-            _active_sessions[session_id] = {
+
+            # -- Create the full voice pipeline ---------------------------------
+            task, runner, llm_context = await create_pipeline(
+                transport, conversation_ctx
+            )
+            sid = webrtc_connection.pc_id or session_id
+            _active_sessions[sid] = {
                 "task": task,
                 "runner": runner,
                 "context": conversation_ctx,
@@ -250,28 +263,114 @@ async def offer(request: Request) -> JSONResponse:
             async def _run_and_cleanup() -> None:
                 """Execute the pipeline and clean up when it finishes."""
                 try:
-                    logger.info("Pipeline started for session {}", session_id)
+                    logger.info("Pipeline started for session {}", sid)
                     await runner.run(task)
+                except asyncio.CancelledError:
+                    logger.info(
+                        "Pipeline cancelled for session {}", sid
+                    )
                 except Exception as run_exc:
                     logger.error(
                         "Pipeline error in session {}: {}",
-                        session_id,
+                        sid,
                         run_exc,
                     )
                 finally:
-                    _active_sessions.pop(session_id, None)
+                    _active_sessions.pop(sid, None)
+
+                    # Extract transcript from LLM context messages
+                    try:
+                        messages = getattr(
+                            llm_context, "messages", None
+                        )
+                        if messages is None:
+                            messages = (
+                                llm_context.get_messages()
+                                if hasattr(llm_context, "get_messages")
+                                else []
+                            )
+                        logger.info(
+                            "Extracting transcript | {} message(s) in "
+                            "LLM context for session {}",
+                            len(messages),
+                            sid,
+                        )
+                        for msg in messages:
+                            # Handle both dict and object messages
+                            role = (
+                                msg.get("role", "")
+                                if isinstance(msg, dict)
+                                else getattr(msg, "role", "")
+                            )
+                            content = (
+                                msg.get("content")
+                                if isinstance(msg, dict)
+                                else getattr(msg, "content", None)
+                            )
+                            if not content or not isinstance(content, str):
+                                continue
+                            if role == "system":
+                                continue
+                            if role == "user":
+                                conversation_ctx.add_transcript_line(
+                                    "user", content
+                                )
+                                conversation_ctx.increment_turn()
+                            elif role == "assistant":
+                                conversation_ctx.add_transcript_line(
+                                    "maya", content
+                                )
+                                conversation_ctx.increment_turn()
+                    except Exception as extract_exc:
+                        logger.error(
+                            "Failed to extract transcript for session "
+                            "{}: {}",
+                            sid,
+                            extract_exc,
+                        )
+
                     logger.info(
                         "Pipeline ended for session {} | "
-                        "duration={}s turns={} escalated={}",
-                        session_id,
+                        "duration={}s turns={} escalated={} "
+                        "transcript_lines={}",
+                        sid,
                         conversation_ctx.duration_seconds(),
                         conversation_ctx.turn_count,
                         conversation_ctx.escalated,
+                        len(conversation_ctx.transcript_lines),
                     )
                     # Attempt to save the call log to the backend
                     await _save_call_log(conversation_ctx)
 
+            # -- Watch for client disconnection --------------------------------
+            async def _watch_disconnect() -> None:
+                """Poll WebRTC connection and cancel pipeline on disconnect."""
+                try:
+                    while sid in _active_sessions:
+                        await asyncio.sleep(2)
+                        try:
+                            connected = webrtc_connection.is_connected()
+                        except Exception:
+                            connected = False
+                        if not connected:
+                            logger.info(
+                                "WebRTC client disconnected | session={}",
+                                sid,
+                            )
+                            try:
+                                await task.cancel()
+                            except Exception as cancel_exc:
+                                logger.warning(
+                                    "Error cancelling task for {}: {}",
+                                    sid,
+                                    cancel_exc,
+                                )
+                            break
+                except asyncio.CancelledError:
+                    pass
+
             asyncio.create_task(_run_and_cleanup())
+            asyncio.create_task(_watch_disconnect())
 
         # -- Use the request handler to manage the connection -------------------
         answer = await _webrtc_handler.handle_web_request(
@@ -313,10 +412,25 @@ async def _save_call_log(ctx: ConversationContext) -> None:
 
     call_data = ctx.to_call_log()
 
-    # Skip if there is essentially no conversation
-    if ctx.turn_count < 1 and not ctx.transcript_lines:
-        logger.debug("Skipping call log save -- no turns recorded")
+    # Skip only truly empty connections (accidental connect/disconnect)
+    duration = ctx.duration_seconds()
+    if duration < 3 and ctx.turn_count < 1 and not ctx.transcript_lines:
+        logger.debug(
+            "Skipping call log save -- trivial connection ({}s, {} turns)",
+            duration,
+            ctx.turn_count,
+        )
         return
+
+    logger.info(
+        "Saving call log | phone={} duration={}s turns={} "
+        "transcript_lines={} tools={}",
+        call_data["patient_phone"],
+        call_data["duration_seconds"],
+        ctx.turn_count,
+        len(ctx.transcript_lines),
+        call_data.get("tools_used", []),
+    )
 
     try:
         async with httpx.AsyncClient(
@@ -328,9 +442,8 @@ async def _save_call_log(ctx: ConversationContext) -> None:
             )
             if response.is_success:
                 logger.info(
-                    "Call log saved | phone={} duration={}s",
-                    call_data["patient_phone"],
-                    call_data["duration_seconds"],
+                    "Call log saved successfully | id={}",
+                    response.json().get("id", "?"),
                 )
             else:
                 logger.warning(
@@ -339,7 +452,11 @@ async def _save_call_log(ctx: ConversationContext) -> None:
                     response.text[:200],
                 )
     except httpx.RequestError as exc:
-        logger.warning("Could not save call log (backend unreachable): {}", exc)
+        logger.warning(
+            "Could not save call log (backend unreachable at {}): {}",
+            settings.api_base_url,
+            exc,
+        )
     except Exception as exc:
         logger.warning("Unexpected error saving call log: {}", exc)
 

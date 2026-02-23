@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Maya — Sunrise Health Clinic</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --primary: #e11d48;
+      --primary-hover: #be123c;
+      --primary-glow: rgba(225, 29, 72, 0.25);
+      --success: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.25);
+      --danger: #ef4444;
+      --radius: 16px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 420px;
+      padding: 24px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 40px 32px;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #ffe4e6, #fecdd3);
+      margin-bottom: 20px;
+    }
+
+    .logo svg { width: 28px; height: 28px; color: var(--primary); }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+    }
+
+    /* Visualizer ring */
+    .visualizer-wrap {
+      position: relative;
+      width: 140px;
+      height: 140px;
+      margin: 0 auto 28px;
+    }
+
+    .ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 3px solid var(--border);
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    .ring.active {
+      border-color: var(--success);
+      box-shadow: 0 0 0 6px var(--success-glow);
+    }
+
+    .ring.speaking {
+      animation: pulse-ring 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-ring {
+      0%, 100% { box-shadow: 0 0 0 4px var(--success-glow); }
+      50% { box-shadow: 0 0 0 12px var(--success-glow); }
+    }
+
+    .mic-icon {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 48px;
+      height: 48px;
+      color: var(--text-muted);
+      transition: color 0.3s;
+    }
+
+    .ring.active + .mic-icon { color: var(--success); }
+
+    /* Status */
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      min-height: 20px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: background 0.3s;
+    }
+
+    .status-dot.connected { background: var(--success); }
+    .status-dot.error { background: var(--danger); }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      height: 48px;
+      padding: 0 32px;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+      outline: none;
+    }
+
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 2px 8px var(--primary-glow);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--primary-hover);
+      box-shadow: 0 4px 16px var(--primary-glow);
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--danger);
+      border: 1.5px solid var(--danger);
+    }
+
+    .btn-outline:hover:not(:disabled) {
+      background: rgba(239, 68, 68, 0.06);
+    }
+
+    .btn svg { width: 18px; height: 18px; }
+
+    /* Timer */
+    .timer {
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-muted);
+      margin-top: 16px;
+      min-height: 20px;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <!-- Logo -->
+      <div class="logo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z"/>
+        </svg>
+      </div>
+
+      <h1>Sunrise Health Clinic</h1>
+      <p class="subtitle">Talk to Maya, your AI receptionist</p>
+
+      <!-- Audio visualizer -->
+      <div class="visualizer-wrap">
+        <div class="ring" id="ring"></div>
+        <svg class="mic-icon" id="micIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z"/>
+          <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+        </svg>
+      </div>
+
+      <!-- Connection status -->
+      <div class="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Ready to connect</span>
+      </div>
+
+      <!-- Connect / Disconnect -->
+      <div id="controls">
+        <button class="btn btn-primary" id="connectBtn" onclick="handleConnect()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+          </svg>
+          Connect
+        </button>
+      </div>
+
+      <div class="timer" id="timer"></div>
+    </div>
+
+    <p class="footer">Audio only &middot; No video or screen sharing</p>
+  </div>
+
+  <!-- Remote audio playback (hidden) -->
+  <audio id="remoteAudio" autoplay></audio>
+
+  <script>
+    // -----------------------------------------------------------------------
+    // State
+    // -----------------------------------------------------------------------
+    let pc = null;           // RTCPeerConnection
+    let localStream = null;  // MediaStream (microphone)
+    let sessionId = null;
+    let timerInterval = null;
+    let startTime = null;
+
+    const ring        = document.getElementById('ring');
+    const micIcon     = document.getElementById('micIcon');
+    const statusDot   = document.getElementById('statusDot');
+    const statusText  = document.getElementById('statusText');
+    const connectBtn  = document.getElementById('connectBtn');
+    const controls    = document.getElementById('controls');
+    const timerEl     = document.getElementById('timer');
+    const remoteAudio = document.getElementById('remoteAudio');
+
+    // -----------------------------------------------------------------------
+    // UI helpers
+    // -----------------------------------------------------------------------
+    function setStatus(text, state) {
+      statusText.textContent = text;
+      statusDot.className = 'status-dot' + (state ? ' ' + state : '');
+    }
+
+    function setConnected(connected) {
+      if (connected) {
+        ring.classList.add('active');
+        setStatus('Connected — speak to Maya', 'connected');
+        controls.innerHTML = `
+          <button class="btn btn-outline" onclick="handleDisconnect()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+            Disconnect
+          </button>`;
+        startTimer();
+      } else {
+        ring.classList.remove('active', 'speaking');
+        setStatus('Ready to connect', '');
+        controls.innerHTML = `
+          <button class="btn btn-primary" id="connectBtn" onclick="handleConnect()">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+            </svg>
+            Connect
+          </button>`;
+        stopTimer();
+      }
+    }
+
+    function startTimer() {
+      startTime = Date.now();
+      timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+        const s = String(elapsed % 60).padStart(2, '0');
+        timerEl.textContent = `${m}:${s}`;
+      }, 1000);
+    }
+
+    function stopTimer() {
+      clearInterval(timerInterval);
+      timerInterval = null;
+      timerEl.textContent = '';
+    }
+
+    // -----------------------------------------------------------------------
+    // WebRTC connection
+    // -----------------------------------------------------------------------
+    async function handleConnect() {
+      try {
+        setStatus('Requesting microphone...', '');
+        connectBtn && (connectBtn.disabled = true);
+
+        // 1. Get audio-only media stream
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+          video: false,
+        });
+
+        setStatus('Connecting...', '');
+
+        // 2. Request a session
+        const startRes = await fetch('/start', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}) });
+
+        if (!startRes.ok) throw new Error(`/start returned ${startRes.status}`);
+        const { session_id } = await startRes.json();
+        sessionId = session_id;
+
+        // 3. Create peer connection (audio only, no video)
+        const config = {
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        };
+        pc = new RTCPeerConnection(config);
+
+        // Add only audio tracks
+        for (const track of localStream.getAudioTracks()) {
+          pc.addTrack(track, localStream);
+        }
+
+        // Handle remote audio
+        pc.ontrack = (event) => {
+          if (event.track.kind === 'audio') {
+            remoteAudio.srcObject = event.streams[0];
+          }
+        };
+
+        // Monitor connection state
+        pc.onconnectionstatechange = () => {
+          const state = pc.connectionState;
+          if (state === 'connected') {
+            setConnected(true);
+          } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+            cleanup();
+            setConnected(false);
+            if (state === 'failed') {
+              setStatus('Connection failed — try again', 'error');
+            }
+          }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          if (pc && pc.iceConnectionState === 'connected') {
+            setConnected(true);
+          }
+        };
+
+        // 4. Create offer and send to server
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // Wait for ICE gathering to complete (or timeout after 3s)
+        await waitForICEGathering(pc, 3000);
+
+        const offerRes = await fetch(`/sessions/${sessionId}/api/offer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sdp: pc.localDescription.sdp,
+            type: pc.localDescription.type,
+          }),
+        });
+
+        if (!offerRes.ok) throw new Error(`Offer returned ${offerRes.status}`);
+        const answer = await offerRes.json();
+
+        // 5. Set the remote answer
+        await pc.setRemoteDescription(new RTCSessionDescription({
+          sdp: answer.sdp,
+          type: answer.type,
+        }));
+
+        setStatus('Connecting...', '');
+
+      } catch (err) {
+        console.error('Connection error:', err);
+        setStatus(`Error: ${err.message}`, 'error');
+        cleanup();
+        setConnected(false);
+      }
+    }
+
+    function waitForICEGathering(peerConnection, timeoutMs) {
+      return new Promise((resolve) => {
+        if (peerConnection.iceGatheringState === 'complete') {
+          resolve();
+          return;
+        }
+        const timeout = setTimeout(resolve, timeoutMs);
+        peerConnection.onicegatheringstatechange = () => {
+          if (peerConnection.iceGatheringState === 'complete') {
+            clearTimeout(timeout);
+            resolve();
+          }
+        };
+      });
+    }
+
+    function handleDisconnect() {
+      cleanup();
+      setConnected(false);
+      setStatus('Disconnected', '');
+    }
+
+    function cleanup() {
+      if (pc) {
+        pc.close();
+        pc = null;
+      }
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+        localStream = null;
+      }
+      remoteAudio.srcObject = null;
+      sessionId = null;
+    }
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', cleanup);
+  </script>
+</body>
+</html>
