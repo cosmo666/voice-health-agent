@@ -12,13 +12,6 @@ import {
   Heart,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import DashboardPage from '@/pages/DashboardPage'
 import CallLogsPage from '@/pages/CallLogsPage'
 import AnalyticsPage from '@/pages/AnalyticsPage'
@@ -71,116 +64,108 @@ export default function App() {
   }, [])
 
   return (
-    <TooltipProvider>
-      <div className="min-h-screen bg-background">
-        {/* Mobile overlay */}
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-hidden="true"
-          />
-        )}
+    <div className="min-h-screen bg-background overflow-x-hidden">
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
-        {/* Sidebar */}
-        <aside
-          className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-sidebar transition-transform duration-200 ease-in-out lg:translate-x-0 ${
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
-        >
-          {/* Logo / Brand */}
-          <div className="flex h-16 items-center gap-2.5 px-6 border-b">
-            <Heart className="h-6 w-6 text-rose-500 fill-rose-500" />
-            <span className="text-lg font-bold tracking-tight text-sidebar-foreground">
-              Sunrise Health
-            </span>
-          </div>
+      {/* Sidebar */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border/50 bg-card transition-transform duration-200 ease-in-out lg:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Logo / Brand */}
+        <div className="flex h-16 items-center gap-3 px-6 border-b border-border/50">
+          <Heart className="h-6 w-6 text-rose-500 fill-rose-500 shrink-0" />
+          <span className="text-lg font-bold tracking-tight text-foreground">
+            Sunrise Health
+          </span>
+        </div>
 
-          {/* Navigation Links */}
-          <nav className="flex-1 space-y-1 px-3 py-4">
-            {NAV_ITEMS.map((item) => (
-              <Tooltip key={item.to} delayDuration={600}>
-                <TooltipTrigger asChild>
+        {/* Navigation Links */}
+        <nav className="flex-1 px-3 py-4">
+          <ul className="space-y-1">
+            {NAV_ITEMS.map((item) => {
+              const Icon = item.icon
+              return (
+                <li key={item.to}>
                   <NavLink
                     to={item.to}
                     end={item.to === '/'}
                     className={({ isActive }) =>
-                      `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
+                      [
+                        'flex flex-row items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                         isActive
-                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground'
-                      }`
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                      ].join(' ')
                     }
                   >
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    {item.label}
+                    <Icon className="h-[18px] w-[18px] shrink-0" />
+                    <span>{item.label}</span>
                   </NavLink>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="lg:hidden">
-                  {item.label}
-                </TooltipContent>
-              </Tooltip>
-            ))}
-          </nav>
+                </li>
+              )
+            })}
+          </ul>
+        </nav>
 
-          <Separator />
+        {/* Bottom section */}
+        <div className="border-t border-border/50 p-3">
+          <button
+            onClick={toggleDarkMode}
+            className="flex w-full flex-row items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {darkMode ? (
+              <Sun className="h-[18px] w-[18px] shrink-0" />
+            ) : (
+              <Moon className="h-[18px] w-[18px] shrink-0" />
+            )}
+            <span>{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
+          </button>
+        </div>
+      </aside>
 
-          {/* Dark Mode Toggle */}
-          <div className="p-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleDarkMode}
-              className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:text-sidebar-accent-foreground"
-            >
-              {darkMode ? (
-                <>
-                  <Sun className="h-4 w-4" />
-                  Light Mode
-                </>
-              ) : (
-                <>
-                  <Moon className="h-4 w-4" />
-                  Dark Mode
-                </>
-              )}
-            </Button>
+      {/* Main Content */}
+      <div className="min-h-screen lg:pl-64">
+        {/* Mobile Header */}
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleSidebar}
+            aria-label="Toggle navigation menu"
+          >
+            {sidebarOpen ? (
+              <X className="h-5 w-5" />
+            ) : (
+              <Menu className="h-5 w-5" />
+            )}
+          </Button>
+          <div className="flex items-center gap-2">
+            <Heart className="h-5 w-5 text-rose-500 fill-rose-500" />
+            <span className="font-semibold text-sm">Sunrise Health</span>
           </div>
-        </aside>
+        </header>
 
-        {/* Main Content */}
-        <div className="lg:pl-64">
-          {/* Mobile Header */}
-          <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:hidden">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleSidebar}
-              aria-label="Toggle navigation menu"
-            >
-              {sidebarOpen ? (
-                <X className="h-5 w-5" />
-              ) : (
-                <Menu className="h-5 w-5" />
-              )}
-            </Button>
-            <div className="flex items-center gap-2">
-              <Heart className="h-5 w-5 text-rose-500 fill-rose-500" />
-              <span className="font-semibold text-sm">Sunrise Health</span>
-            </div>
-          </header>
-
-          {/* Page Content */}
-          <main className="p-6 lg:p-8 max-w-7xl mx-auto">
+        {/* Page Content */}
+        <main className="w-full overflow-x-hidden p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto">
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/calls" element={<CallLogsPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
               <Route path="/config" element={<AgentConfigPage />} />
             </Routes>
-          </main>
-        </div>
+          </div>
+        </main>
       </div>
-    </TooltipProvider>
+    </div>
   )
 }

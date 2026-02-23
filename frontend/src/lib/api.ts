@@ -123,7 +123,7 @@ export const fetchSlots = (doctorName?: string, date?: string) =>
 
 // Analytics endpoint (computed from call logs on the frontend)
 export const fetchAnalytics = async (): Promise<AnalyticsData> => {
-  const logs = await fetchCallLogs(1, 1000)
+  const logs = await fetchCallLogs(1, 100)
 
   // Compute analytics from call logs
   const callsByDay = new Map<string, number>()
@@ -131,10 +131,10 @@ export const fetchAnalytics = async (): Promise<AnalyticsData> => {
   const sentiments: number[] = []
 
   for (const log of logs.items) {
-    const day = log.created_at.split('T')[0]
-    callsByDay.set(day, (callsByDay.get(day) || 0) + 1)
+    const day = log.created_at.split('T')[0] ?? log.created_at
+    callsByDay.set(day, (callsByDay.get(day) ?? 0) + 1)
     if (!durationsByDay.has(day)) durationsByDay.set(day, [])
-    durationsByDay.get(day)!.push(log.duration_seconds)
+    durationsByDay.get(day)?.push(log.duration_seconds)
     if (log.sentiment_score !== null) sentiments.push(log.sentiment_score)
   }
 

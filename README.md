@@ -100,39 +100,80 @@ cd voice-health-agent
 
 # Pull the cloud LLM model (metadata only, no large download)
 ollama pull gpt-oss:20b-cloud
+```
 
-# Run the full setup (venv, deps, DB, seed data, frontend)
+#### Linux/macOS (with make)
+
+```bash
 make setup
 ```
 
-Or step by step:
+#### Windows (PowerShell) / Step by Step
 
-```bash
-# 1. Create Python virtual environment and install dependencies
+```powershell
+# 1. Create virtual environment and activate it
 python -m venv .venv
-# Linux/macOS:
-source .venv/bin/activate
-# Windows:
-.venv\Scripts\activate
+.venv\Scripts\Activate.ps1
 
+# 2. Install Python dependencies
 pip install -r requirements.txt
 
-# 2. Install frontend dependencies
-cd frontend && npm install && cd ..
+# 3. Install frontend dependencies
+cd frontend; npm install; cd ..
 
-# 3. Create database tables
+# 4. Create database tables
 python scripts/setup_db.py
 
-# 4. Seed sample data (doctors, patients, time slots)
+# 5. Seed sample data (8 doctors, 50+ time slots, 5 patients)
 python scripts/seed_data.py
 
-# 5. Ingest RAG knowledge base documents
+# 6. Ingest RAG knowledge base documents into ChromaDB
+python scripts/seed_knowledge_base.py
+```
+
+#### Linux/macOS (step by step)
+
+```bash
+# 1. Create virtual environment and activate it
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2. Install Python dependencies
+pip install -r requirements.txt
+
+# 3. Install frontend dependencies
+cd frontend && npm install && cd ..
+
+# 4. Create database tables
+python scripts/setup_db.py
+
+# 5. Seed sample data (8 doctors, 50+ time slots, 5 patients)
+python scripts/seed_data.py
+
+# 6. Ingest RAG knowledge base documents into ChromaDB
 python scripts/seed_knowledge_base.py
 ```
 
 ### Running the Application
 
-Open **three terminal tabs** and start each service:
+Open **three separate terminals** and start each service:
+
+#### Windows (PowerShell)
+
+```powershell
+# Terminal 1 -- FastAPI Backend (port 8000)
+.venv\Scripts\Activate.ps1
+.venv\Scripts\uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Terminal 2 -- Voice Agent + WebRTC UI (port 7860)
+.venv\Scripts\Activate.ps1
+.venv\Scripts\uvicorn agent.main:app --host 0.0.0.0 --port 7860
+
+# Terminal 3 -- React Admin Dashboard (port 3000)
+cd frontend; npm run dev
+```
+
+#### Linux/macOS (with make)
 
 ```bash
 # Terminal 1 -- FastAPI Backend (port 8000)
@@ -147,11 +188,12 @@ make run-frontend
 
 ### Using the Voice Agent
 
-1. Ensure all three services are running
-2. Open **http://localhost:7860** in Google Chrome
-3. Allow microphone access when prompted
-4. Click the **"Connect"** button
-5. Maya greets you -- start talking naturally
+1. Make sure **Ollama is running** (`ollama serve` or the Ollama desktop app)
+2. Start all **three services** (API, Agent, Frontend) as shown above
+3. Open **http://localhost:7860** in Google Chrome
+4. Allow microphone access when prompted
+5. Click the **"Connect"** button
+6. Maya greets you -- start talking naturally!
 
 **Try these phrases:**
 - "I'd like to book an appointment with Dr. Patel"
@@ -162,11 +204,14 @@ make run-frontend
 
 ### Admin Dashboard
 
-Open **http://localhost:3000** to access the admin dashboard with:
-- **Dashboard**: Overview metrics, recent calls, active appointments
-- **Call Logs**: Searchable/filterable table of all voice interactions
-- **Analytics**: Charts for call volume, booking rates, sentiment trends
-- **Agent Config**: Live system prompt editor and service health monitor
+Open **http://localhost:3000** to access the admin dashboard:
+
+| Page | Description |
+|------|-------------|
+| **Dashboard** | Overview metrics (total calls, avg duration, escalation rate), recent calls table |
+| **Call Logs** | Searchable/paginated table of all voice interactions, click to view full transcript |
+| **Analytics** | 6 charts -- calls per day, avg duration, sentiment distribution, escalation rate, top doctors, booking rate |
+| **Configuration** | Live service health status, system prompt editor, pipeline settings |
 
 ---
 
@@ -406,8 +451,13 @@ alembic downgrade -1
 ### Running Tests
 
 ```bash
+# Linux/macOS
 make test
-# or directly:
+
+# Windows (PowerShell)
+.venv\Scripts\pytest tests/ -v
+
+# Or directly (any OS, with venv activated)
 pytest tests/ -v
 ```
 
@@ -417,8 +467,10 @@ ChromaDB) so they run fast without requiring any services to be up.
 ### Re-Seeding Data
 
 ```bash
+# Linux/macOS
 make seed
-# or:
+
+# Windows (PowerShell) / any OS with venv activated
 python scripts/seed_data.py
 python scripts/seed_knowledge_base.py
 ```
@@ -440,7 +492,14 @@ min/avg/max/p95 latencies alongside the target thresholds.
 ### Clean Slate
 
 ```bash
+# Linux/macOS
 make clean
+
+# Windows (PowerShell)
+Remove-Item clinic.db -ErrorAction SilentlyContinue
+Remove-Item chroma_db -Recurse -ErrorAction SilentlyContinue
+Remove-Item .venv -Recurse -ErrorAction SilentlyContinue
+Remove-Item frontend\node_modules -Recurse -ErrorAction SilentlyContinue
 ```
 
 Removes `clinic.db`, `chroma_db/`, `.venv/`, and `frontend/node_modules/`.

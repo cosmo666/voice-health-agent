@@ -29,12 +29,11 @@ from loguru import logger
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
-from pipecat.services.ollama import OLLamaLLMService
-from pipecat.services.faster_whisper import FasterWhisperSTTService
-from pipecat.services.kokoro import KokoroTTSService
-from pipecat.transports.services.small_webrtc import SmallWebRTCTransport
+from pipecat.services.ollama.llm import OLLamaLLMService
+from pipecat.services.whisper.stt import WhisperSTTService
+from pipecat.services.kokoro.tts import KokoroTTSService
+from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
 from agent.config import settings
 from agent.prompts import SYSTEM_PROMPT
@@ -82,7 +81,7 @@ async def create_pipeline(
 
     # -- STT: Faster-Whisper on CPU, int8 quantisation ----------------------
     try:
-        stt = FasterWhisperSTTService(
+        stt = WhisperSTTService(
             model=settings.whisper_model,
             device=settings.whisper_device,
             compute_type=settings.whisper_compute_type,
@@ -102,13 +101,11 @@ async def create_pipeline(
     # -- TTS: Kokoro 82M ONNX on CPU ---------------------------------------
     try:
         tts = KokoroTTSService(
-            voice=settings.kokoro_voice,
-            speed=settings.kokoro_speed,
+            voice_id=settings.kokoro_voice,
         )
         logger.info(
-            "TTS ready | voice={} speed={}",
+            "TTS ready | voice={}",
             settings.kokoro_voice,
-            settings.kokoro_speed,
         )
     except Exception as exc:
         logger.error("Failed to initialise Kokoro TTS: {}", exc)
@@ -119,7 +116,7 @@ async def create_pipeline(
         llm = OLLamaLLMService(
             model=settings.ollama_model,
             base_url=settings.ollama_base_url + "/v1",
-        )
+        )  # OLLamaLLMService expects base_url with /v1 suffix
         logger.info(
             "LLM ready | model={} base_url={}",
             settings.ollama_model,

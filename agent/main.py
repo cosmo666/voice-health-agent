@@ -20,7 +20,6 @@ Start with::
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -28,8 +27,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from loguru import logger
 
-from pipecat.transports.services.small_webrtc import SmallWebRTCTransport
-from pipecat.audio.vad.silero import SileroVADAnalyzer, VADParams
+from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
+from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
+from pipecat.transports.smallwebrtc.request_handler import (
+    SmallWebRTCRequest,
+    SmallWebRTCRequestHandler,
+)
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.transports.base_transport import TransportParams
 
 from agent.config import settings
@@ -62,8 +67,8 @@ app.add_middleware(
 try:
     from pipecat_ai_small_webrtc_prebuilt.frontend import SmallWebRTCPrebuiltUI
 
-    # SmallWebRTCPrebuiltUI is a Starlette application / static-files mount
-    app.mount("/client", SmallWebRTCPrebuiltUI())
+    # SmallWebRTCPrebuiltUI is already an instantiated Starlette StaticFiles app
+    app.mount("/client", SmallWebRTCPrebuiltUI)
     logger.info("Mounted SmallWebRTCPrebuiltUI at /client")
 except ImportError:
     logger.warning(
@@ -83,6 +88,12 @@ except Exception as exc:
 # ---------------------------------------------------------------------------
 
 _active_sessions: dict[str, dict[str, Any]] = {}
+
+# ---------------------------------------------------------------------------
+# WebRTC request handler (manages connections)
+# ---------------------------------------------------------------------------
+
+_webrtc_handler = SmallWebRTCRequestHandler()
 
 
 # ---------------------------------------------------------------------------
@@ -126,22 +137,20 @@ async def offer(request: Request) -> JSONResponse:
     This endpoint performs the following sequence:
 
     1. Parses the SDP offer from the request body.
-    2. Creates a ``SmallWebRTCTransport`` with Silero VAD and optional
-       SmartTurn v3 for AI-powered turn detection.
-    3. Builds the full voice pipeline (STT -> LLM -> TTS).
-    4. Passes the SDP offer to the transport to generate an SDP answer.
-    5. Launches the pipeline in a background ``asyncio.Task``.
-    6. Returns the SDP answer so the browser can complete the P2P connection.
+    2. Uses ``SmallWebRTCRequestHandler`` to manage the WebRTC connection.
+    3. In the connection callback, creates a ``SmallWebRTCTransport`` with
+       Silero VAD, builds the full voice pipeline, and runs it.
+    4. Returns the SDP answer so the browser can complete the P2P connection.
 
     Request Body:
-        JSON with ``sdp`` (string) and ``type`` (string, usually ``"offer"``).
+        JSON with ``sdp`` (string), ``type`` (string), and optionally ``pc_id``.
 
     Returns:
-        JSON with ``sdp`` (string) and ``type`` (string, usually ``"answer"``).
+        JSON with ``sdp`` (string), ``type`` (string), and ``pc_id`` (string).
     """
     try:
         body = await request.json()
-    except json.JSONDecodeError:
+    except Exception:
         logger.error("Malformed JSON in /api/offer request body")
         return JSONResponse(
             status_code=400,
@@ -150,6 +159,7 @@ async def offer(request: Request) -> JSONResponse:
 
     sdp: str | None = body.get("sdp")
     offer_type: str = body.get("type", "offer")
+    pc_id: str | None = body.get("pc_id")
 
     if not sdp:
         logger.error("Missing 'sdp' field in /api/offer request")
@@ -159,127 +169,123 @@ async def offer(request: Request) -> JSONResponse:
         )
 
     logger.info(
-        "Received WebRTC offer | type={} sdp_length={}",
+        "Received WebRTC offer | type={} sdp_length={} pc_id={}",
         offer_type,
         len(sdp),
+        pc_id,
     )
 
     try:
-        # -- Build VAD parameters -------------------------------------------
-        vad_analyzer = SileroVADAnalyzer(
-            params=VADParams(
-                stop_secs=settings.vad_stop_secs,
-                start_secs=settings.vad_start_secs,
-                confidence=settings.vad_confidence,
-                min_volume=settings.vad_min_volume,
-            )
+        webrtc_request = SmallWebRTCRequest(
+            sdp=sdp,
+            type=offer_type,
+            pc_id=pc_id,
         )
 
-        # -- Build transport parameters -------------------------------------
-        transport_params = TransportParams(
-            audio_in_enabled=True,
-            audio_out_enabled=True,
-            vad_enabled=True,
-            vad_analyzer=vad_analyzer,
-        )
+        async def _on_connection(webrtc_connection: SmallWebRTCConnection) -> None:
+            """Callback invoked when a new WebRTC connection is created.
 
-        # Attempt to add SmartTurn v3 for AI-powered turn detection.
-        # This is optional -- if the import fails we fall back to plain
-        # silence-based VAD which still works fine.
-        try:
-            from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import (
-                LocalSmartTurnAnalyzerV3,
-            )
-            from pipecat.turns.user_stop import TurnAnalyzerUserTurnStopStrategy
+            Builds the full voice pipeline and runs it in a background task.
+            """
+            logger.info("New WebRTC connection: {}", webrtc_connection.pc_id)
 
-            transport_params.turn_stop_strategy = TurnAnalyzerUserTurnStopStrategy(
-                turn_analyzer=LocalSmartTurnAnalyzerV3()
-            )
-            logger.info("SmartTurn v3 enabled for AI-powered turn detection")
-        except ImportError:
-            logger.info(
-                "SmartTurn v3 not available -- using silence-based VAD only"
-            )
-        except Exception as turn_exc:
-            logger.warning(
-                "SmartTurn v3 init failed ({}), falling back to silence VAD",
-                turn_exc,
+            # -- Build VAD parameters -------------------------------------------
+            vad_analyzer = SileroVADAnalyzer(
+                params=VADParams(
+                    stop_secs=settings.vad_stop_secs,
+                    start_secs=settings.vad_start_secs,
+                    confidence=settings.vad_confidence,
+                    min_volume=settings.vad_min_volume,
+                )
             )
 
-        # -- Create transport -----------------------------------------------
-        transport = SmallWebRTCTransport(
-            webrtc_connection=None,
-            params=transport_params,
-        )
+            # -- Build transport parameters ------------------------------------
+            transport_params = TransportParams(
+                audio_in_enabled=True,
+                audio_out_enabled=True,
+                vad_enabled=True,
+                vad_analyzer=vad_analyzer,
+            )
 
-        # -- Create the full voice pipeline ---------------------------------
-        task, runner = await create_pipeline(transport)
-
-        # -- Handle the SDP offer/answer exchange ---------------------------
-        answer = await transport.handle_offer(sdp, offer_type)
-
-        # -- Create conversation context for this session -------------------
-        conversation_ctx = ConversationContext()
-        session_id = str(id(task))
-        _active_sessions[session_id] = {
-            "task": task,
-            "runner": runner,
-            "context": conversation_ctx,
-        }
-
-        # -- Run the pipeline in the background -----------------------------
-        async def _run_and_cleanup() -> None:
-            """Execute the pipeline and clean up when it finishes."""
+            # Attempt to add SmartTurn v3 for AI-powered turn detection.
             try:
+                from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import (
+                    LocalSmartTurnAnalyzerV3,
+                )
+                from pipecat.turns.user_stop import TurnAnalyzerUserTurnStopStrategy
+
+                transport_params.turn_stop_strategy = TurnAnalyzerUserTurnStopStrategy(
+                    turn_analyzer=LocalSmartTurnAnalyzerV3()
+                )
+                logger.info("SmartTurn v3 enabled for AI-powered turn detection")
+            except ImportError:
                 logger.info(
-                    "Pipeline started for session {}",
-                    session_id,
+                    "SmartTurn v3 not available -- using silence-based VAD only"
                 )
-                await runner.run(task)
-            except Exception as run_exc:
-                logger.error(
-                    "Pipeline error in session {}: {}",
-                    session_id,
-                    run_exc,
-                )
-            finally:
-                _active_sessions.pop(session_id, None)
-                logger.info(
-                    "Pipeline ended for session {} | "
-                    "duration={}s turns={} escalated={}",
-                    session_id,
-                    conversation_ctx.duration_seconds(),
-                    conversation_ctx.turn_count,
-                    conversation_ctx.escalated,
+            except Exception as turn_exc:
+                logger.warning(
+                    "SmartTurn v3 init failed ({}), falling back to silence VAD",
+                    turn_exc,
                 )
 
-                # Attempt to save the call log to the backend
-                await _save_call_log(conversation_ctx)
+            # -- Create transport -----------------------------------------------
+            transport = SmallWebRTCTransport(
+                webrtc_connection=webrtc_connection,
+                params=transport_params,
+            )
 
-        asyncio.create_task(_run_and_cleanup())
+            # -- Create the full voice pipeline ---------------------------------
+            task, runner = await create_pipeline(transport)
 
-        # -- Return the SDP answer ------------------------------------------
-        logger.info("Returning SDP answer for session {}", session_id)
-        return JSONResponse(
-            content={
-                "sdp": answer.sdp,
-                "type": answer.type,
+            # -- Create conversation context for this session -------------------
+            conversation_ctx = ConversationContext()
+            session_id = webrtc_connection.pc_id or str(id(task))
+            _active_sessions[session_id] = {
+                "task": task,
+                "runner": runner,
+                "context": conversation_ctx,
             }
+
+            # -- Run the pipeline in the background -----------------------------
+            async def _run_and_cleanup() -> None:
+                """Execute the pipeline and clean up when it finishes."""
+                try:
+                    logger.info("Pipeline started for session {}", session_id)
+                    await runner.run(task)
+                except Exception as run_exc:
+                    logger.error(
+                        "Pipeline error in session {}: {}",
+                        session_id,
+                        run_exc,
+                    )
+                finally:
+                    _active_sessions.pop(session_id, None)
+                    logger.info(
+                        "Pipeline ended for session {} | "
+                        "duration={}s turns={} escalated={}",
+                        session_id,
+                        conversation_ctx.duration_seconds(),
+                        conversation_ctx.turn_count,
+                        conversation_ctx.escalated,
+                    )
+                    # Attempt to save the call log to the backend
+                    await _save_call_log(conversation_ctx)
+
+            asyncio.create_task(_run_and_cleanup())
+
+        # -- Use the request handler to manage the connection -------------------
+        answer = await _webrtc_handler.handle_web_request(
+            webrtc_request, _on_connection
         )
 
-    except AttributeError:
-        # Some Pipecat versions return the answer as a dict instead of
-        # an object with .sdp / .type attributes.  Handle both.
-        logger.info("Attempting dict-based SDP answer format")
-        try:
-            answer_dict = answer if isinstance(answer, dict) else vars(answer)
-            return JSONResponse(content=answer_dict)
-        except Exception as fallback_exc:
-            logger.error("Could not format SDP answer: {}", fallback_exc)
+        if answer is None:
             return JSONResponse(
                 status_code=500,
-                content={"error": "Failed to generate SDP answer"},
+                content={"error": "No SDP answer generated"},
             )
+
+        logger.info("Returning SDP answer | pc_id={}", answer.get("pc_id"))
+        return JSONResponse(content=answer)
 
     except Exception as exc:
         logger.error("Failed to handle WebRTC offer: {}", exc, exc_info=True)
@@ -378,4 +384,11 @@ async def _on_shutdown() -> None:
                     exc,
                 )
         _active_sessions.clear()
+
+    # Clean up the WebRTC request handler
+    try:
+        await _webrtc_handler.close()
+    except Exception as exc:
+        logger.warning("Error closing WebRTC handler: {}", exc)
+
     logger.info("Maya Voice Agent shut down cleanly")

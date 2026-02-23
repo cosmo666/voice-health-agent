@@ -10,14 +10,13 @@ python-dotenv>=1.0.1
 httpx>=0.28.0
 
 # Voice Pipeline — Pipecat
-pipecat-ai[silero,smallwebrtc]>=0.0.55
+pipecat-ai[silero,webrtc,kokoro]>=0.0.55
 pipecat-ai-small-webrtc-prebuilt>=0.0.5
 
 # STT — Faster-Whisper (CPU)
 faster-whisper>=1.1.0
 
 # TTS — Kokoro (CPU ONNX)
-kokoro>=0.9.4
 onnxruntime>=1.20.0
 
 # RAG

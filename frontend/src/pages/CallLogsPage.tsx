@@ -3,9 +3,6 @@ import { Search, ChevronLeft, ChevronRight, Phone, AlertTriangle, FileText } fro
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from '@/components/ui/card'
 import {
   Table,
