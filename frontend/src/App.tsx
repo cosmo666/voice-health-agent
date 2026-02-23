@@ -1,0 +1,186 @@
+import { useState, useEffect, useCallback } from 'react'
+import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import {
+  BarChart3,
+  Phone,
+  TrendingUp,
+  Settings,
+  Moon,
+  Sun,
+  Menu,
+  X,
+  Heart,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import DashboardPage from '@/pages/DashboardPage'
+import CallLogsPage from '@/pages/CallLogsPage'
+import AnalyticsPage from '@/pages/AnalyticsPage'
+import AgentConfigPage from '@/pages/AgentConfigPage'
+
+/** Navigation items with routes, labels, and icons. */
+const NAV_ITEMS = [
+  { to: '/', label: 'Dashboard', icon: BarChart3 },
+  { to: '/calls', label: 'Call Logs', icon: Phone },
+  { to: '/analytics', label: 'Analytics', icon: TrendingUp },
+  { to: '/config', label: 'Configuration', icon: Settings },
+] as const
+
+/** Key used for persisting dark mode preference. */
+const DARK_MODE_KEY = 'sunrise-health-dark-mode'
+
+/** Read dark mode preference from localStorage or system preference. */
+function getInitialDarkMode(): boolean {
+  const stored = localStorage.getItem(DARK_MODE_KEY)
+  if (stored !== null) return stored === 'true'
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+export default function App() {
+  const [darkMode, setDarkMode] = useState(getInitialDarkMode)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const location = useLocation()
+
+  // Apply dark mode class to document root.
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+    localStorage.setItem(DARK_MODE_KEY, String(darkMode))
+  }, [darkMode])
+
+  // Close mobile sidebar on route change.
+  useEffect(() => {
+    setSidebarOpen(false)
+  }, [location.pathname])
+
+  const toggleDarkMode = useCallback(() => {
+    setDarkMode((prev) => !prev)
+  }, [])
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((prev) => !prev)
+  }, [])
+
+  return (
+    <TooltipProvider>
+      <div className="min-h-screen bg-background">
+        {/* Mobile overlay */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Sidebar */}
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-sidebar transition-transform duration-200 ease-in-out lg:translate-x-0 ${
+            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
+          {/* Logo / Brand */}
+          <div className="flex h-16 items-center gap-2.5 px-6 border-b">
+            <Heart className="h-6 w-6 text-rose-500 fill-rose-500" />
+            <span className="text-lg font-bold tracking-tight text-sidebar-foreground">
+              Sunrise Health
+            </span>
+          </div>
+
+          {/* Navigation Links */}
+          <nav className="flex-1 space-y-1 px-3 py-4">
+            {NAV_ITEMS.map((item) => (
+              <Tooltip key={item.to} delayDuration={600}>
+                <TooltipTrigger asChild>
+                  <NavLink
+                    to={item.to}
+                    end={item.to === '/'}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
+                        isActive
+                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground'
+                      }`
+                    }
+                  >
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    {item.label}
+                  </NavLink>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="lg:hidden">
+                  {item.label}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </nav>
+
+          <Separator />
+
+          {/* Dark Mode Toggle */}
+          <div className="p-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleDarkMode}
+              className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:text-sidebar-accent-foreground"
+            >
+              {darkMode ? (
+                <>
+                  <Sun className="h-4 w-4" />
+                  Light Mode
+                </>
+              ) : (
+                <>
+                  <Moon className="h-4 w-4" />
+                  Dark Mode
+                </>
+              )}
+            </Button>
+          </div>
+        </aside>
+
+        {/* Main Content */}
+        <div className="lg:pl-64">
+          {/* Mobile Header */}
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:hidden">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              aria-label="Toggle navigation menu"
+            >
+              {sidebarOpen ? (
+                <X className="h-5 w-5" />
+              ) : (
+                <Menu className="h-5 w-5" />
+              )}
+            </Button>
+            <div className="flex items-center gap-2">
+              <Heart className="h-5 w-5 text-rose-500 fill-rose-500" />
+              <span className="font-semibold text-sm">Sunrise Health</span>
+            </div>
+          </header>
+
+          {/* Page Content */}
+          <main className="p-6 lg:p-8 max-w-7xl mx-auto">
+            <Routes>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/calls" element={<CallLogsPage />} />
+              <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/config" element={<AgentConfigPage />} />
+            </Routes>
+          </main>
+        </div>
+      </div>
+    </TooltipProvider>
+  )
+}

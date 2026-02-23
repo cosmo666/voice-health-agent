@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+.env
+
+# Node/React
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Data
+*.db
+*.sqlite
+chroma_db/
+mlflow_data/
+mlruns/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
