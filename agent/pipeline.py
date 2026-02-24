@@ -50,6 +50,25 @@ from agent.flows import ConversationContext
 from agent.prompts import SYSTEM_PROMPT
 from agent.tools import TOOL_DEFINITIONS, TOOL_HANDLERS
 
+
+# ---------------------------------------------------------------------------
+# Multilingual STT (auto-detect Hindi / English)
+# ---------------------------------------------------------------------------
+
+
+class MultilingualWhisperSTT(WhisperSTTService):
+    """WhisperSTTService with language auto-detection.
+
+    Pipecat's WhisperSTTService defaults to ``Language.EN``, forcing
+    English-only transcription.  This subclass overrides the language
+    mapping to return ``None``, which lets faster-whisper auto-detect
+    the spoken language on every utterance.
+    """
+
+    def language_to_service_language(self, language: Language) -> str | None:
+        """Return None so faster-whisper auto-detects the language."""
+        return None
+
 # ---------------------------------------------------------------------------
 # Greeting message (sent as TTS once the pipeline is running)
 # ---------------------------------------------------------------------------
@@ -107,10 +126,11 @@ async def create_pipeline(
         if settings.whisper_language:
             # Specific language forced (e.g. "en" or "hi")
             stt_kwargs["language"] = Language(settings.whisper_language)
-        # When whisper_language is empty, omit the kwarg entirely so
-        # WhisperSTTService uses its default (Language.EN).  Passing None
-        # crashes pipecat 0.0.103 with "'NoneType' has no attribute 'value'".
-        stt = WhisperSTTService(**stt_kwargs)
+            stt = WhisperSTTService(**stt_kwargs)
+        else:
+            # Use multilingual auto-detect subclass (returns None for
+            # language so faster-whisper detects Hindi/English per utterance)
+            stt = MultilingualWhisperSTT(**stt_kwargs)
         lang_mode = settings.whisper_language or "auto-detect"
         logger.info(
             "STT ready | model={} device={} compute={} language={}",
@@ -284,10 +304,13 @@ async def create_pipeline(
     async def _on_client_connected(transport_ref: Any, *args: Any) -> None:
         """Greet the caller as soon as they connect via WebRTC.
 
-        Queues an LLMRunFrame to trigger the LLM to generate Maya's
-        opening greeting from the system prompt.
+        Waits briefly for the audio stream to stabilise (avoids VAD
+        false-triggers from connection noise), then queues an LLMRunFrame
+        to generate Maya's opening greeting.
         """
-        logger.info("Client connected, sending greeting")
+        logger.info("Client connected, waiting for audio to stabilise...")
+        await asyncio.sleep(1.0)
+        logger.info("Sending greeting")
         await task.queue_frames([LLMRunFrame()])
 
     runner = PipelineRunner()

@@ -65,9 +65,9 @@ async def _ollama_generate(
         },
     }
 
-    # Use higher token limit for insights generation
+    # Use higher token limit for insights generation (think blocks eat tokens)
     if model == ANALYTICS_MODEL:
-        payload["options"]["num_predict"] = 1024
+        payload["options"]["num_predict"] = 2048
 
     async with httpx.AsyncClient(timeout=timeout or _OLLAMA_TIMEOUT) as client:
         response = await client.post(url, json=payload)
@@ -78,6 +78,10 @@ async def _ollama_generate(
         # Strip <think>...</think> blocks from chain-of-thought models
         # (qwen3, gpt-oss, etc.) that include reasoning in their output.
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+        # Handle unclosed <think> tags (model ran out of tokens mid-reasoning)
+        if "<think>" in text:
+            text = re.sub(r"<think>.*", "", text, flags=re.DOTALL).strip()
 
         return text
 
@@ -275,7 +279,6 @@ async def generate_ai_insights(call_id: str) -> None:
                 return
 
             prompt = (
-                "/no_think\n"
                 "You are an expert healthcare call analyst. Analyze the following phone call "
                 "transcript between a patient and Maya, an AI receptionist at Sunrise Health Clinic.\n\n"
                 "Return ONLY valid JSON (no markdown, no explanation) with this exact structure:\n"
@@ -312,6 +315,12 @@ async def generate_ai_insights(call_id: str) -> None:
 
             raw_response = await _ollama_generate(
                 prompt, model=ANALYTICS_MODEL, timeout=_INSIGHTS_TIMEOUT
+            )
+
+            logger.debug(
+                "AI insights raw response for call_id={}: {}",
+                call_id,
+                raw_response[:500],
             )
 
             # Parse the JSON response
@@ -390,6 +399,9 @@ def _parse_insights_json(raw: str, call_id: str) -> dict | None:
 
     json_str = text[start : end + 1]
 
+    # Fix common LLM JSON issues: trailing commas before } or ]
+    json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
+
     try:
         parsed = json.loads(json_str)
         if not isinstance(parsed, dict):
@@ -403,7 +415,7 @@ def _parse_insights_json(raw: str, call_id: str) -> dict | None:
             "Failed to parse AI insights JSON for call_id={}: {} | raw: {}",
             call_id,
             exc,
-            json_str[:300],
+            json_str[:500],
         )
         return None
 
