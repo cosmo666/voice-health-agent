@@ -11,7 +11,7 @@ and external integrations. Provides:
 
 Start with::
 
-    uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
 """
 
 import os
@@ -63,7 +63,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     logger.info("Sunrise Health Clinic API starting up...")
     await init_db()
-    logger.info("Database initialized, API is ready to serve requests")
+    logger.info("Database initialized, API ready | http://localhost:8000")
+
+    # Pre-warm RAG embedding model so the first query doesn't cold-start
+    try:
+        from rag.query_engine import _get_embedding_model, _get_chroma_collection
+
+        _get_embedding_model()
+        _get_chroma_collection()
+        logger.info("RAG engine pre-warmed (embedding model + ChromaDB loaded)")
+    except Exception as exc:
+        logger.warning("RAG pre-warm skipped (not critical): {}", exc)
     yield
     logger.info("Sunrise Health Clinic API shutting down...")
 

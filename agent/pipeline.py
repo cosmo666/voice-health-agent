@@ -5,10 +5,10 @@ The pipeline chains together:
 
 1. **SmallWebRTCTransport** -- P2P WebRTC audio I/O (no external service).
 2. **Silero VAD** -- Voice Activity Detection on CPU (~50 MB).
-3. **Faster-Whisper** -- Speech-to-Text on CPU with int8 quantisation (~150 MB).
-4. **OpenAILLMContext** -- Manages conversation history and tool definitions.
+3. **Faster-Whisper** -- Multilingual STT on CPU with int8 quantisation (~300 MB).
+4. **LLMContext** -- Manages conversation history and tool definitions.
 5. **OLLamaLLMService** -- gpt-oss:20b-cloud via local Ollama API.
-6. **KokoroTTSService** -- Text-to-Speech on CPU via ONNX (~200 MB).
+6. **SarvamTTSService** -- Streaming TTS via Sarvam AI (Hindi + English).
 
 Interruption handling is enabled: if the user speaks while Maya is talking,
 the pipeline cancels TTS output and switches to listening mode.
@@ -23,18 +23,26 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
+from typing import Any, Optional
 
 from loguru import logger
 
-from pipecat.frames.frames import EndFrame
+from pipecat.adapters.schemas.tools_schema import AdapterType, ToolsSchema
+from pipecat.audio.vad.vad_analyzer import VADAnalyzer
+from pipecat.frames.frames import EndFrame, LLMRunFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
+)
+from pipecat.services.llm_service import FunctionCallParams
 from pipecat.services.ollama.llm import OLLamaLLMService
 from pipecat.services.whisper.stt import WhisperSTTService
-from pipecat.services.kokoro.tts import KokoroTTSService
+from pipecat.services.sarvam.tts import SarvamTTSService
+from pipecat.transcriptions.language import Language
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
 from agent.config import settings
@@ -59,7 +67,8 @@ GREETING_MESSAGE: str = (
 async def create_pipeline(
     transport: SmallWebRTCTransport,
     conversation_ctx: ConversationContext | None = None,
-) -> tuple[PipelineTask, PipelineRunner, OpenAILLMContext]:
+    vad_analyzer: Optional[VADAnalyzer] = None,
+) -> tuple[PipelineTask, PipelineRunner, LLMContext]:
     """Create and configure the full voice pipeline.
 
     Builds the chain: transport.input -> STT -> context_aggregator.user ->
@@ -71,15 +80,15 @@ async def create_pipeline(
 
     Args:
         transport: A ``SmallWebRTCTransport`` instance that has been
-            pre-configured with VAD parameters and is ready to receive
-            an SDP offer.
+            pre-configured and is ready to receive an SDP offer.
         conversation_ctx: Optional conversation context for tracking tool
             usage, escalation, and other metadata during the call.
+        vad_analyzer: Optional VAD analyzer for voice activity detection.
 
     Returns:
-        A ``(PipelineTask, PipelineRunner, OpenAILLMContext)`` tuple.
+        A ``(PipelineTask, PipelineRunner, LLMContext)`` tuple.
         The caller should await ``runner.run(task)`` to start processing
-        audio.  After the pipeline ends, the ``OpenAILLMContext`` contains
+        audio.  After the pipeline ends, the ``LLMContext`` contains
         all conversation messages for transcript extraction.
 
     Raises:
@@ -87,36 +96,54 @@ async def create_pipeline(
     """
     logger.info("Creating voice pipeline...")
 
-    # -- STT: Faster-Whisper on CPU, int8 quantisation ----------------------
+    # -- STT: Faster-Whisper multilingual on CPU, int8 quantisation ----------
     try:
-        stt = WhisperSTTService(
-            model=settings.whisper_model,
-            device=settings.whisper_device,
-            compute_type=settings.whisper_compute_type,
-            language=settings.whisper_language,
-            no_speech_prob=0.4,
-        )
+        stt_kwargs: dict[str, Any] = {
+            "model": settings.whisper_model,
+            "device": settings.whisper_device,
+            "compute_type": settings.whisper_compute_type,
+            "no_speech_prob": 0.4,
+        }
+        if settings.whisper_language:
+            # Specific language forced (e.g. "en" or "hi")
+            stt_kwargs["language"] = Language(settings.whisper_language)
+        # When whisper_language is empty, omit the kwarg entirely so
+        # WhisperSTTService uses its default (Language.EN).  Passing None
+        # crashes pipecat 0.0.103 with "'NoneType' has no attribute 'value'".
+        stt = WhisperSTTService(**stt_kwargs)
+        lang_mode = settings.whisper_language or "auto-detect"
         logger.info(
-            "STT ready | model={} device={} compute={}",
+            "STT ready | model={} device={} compute={} language={}",
             settings.whisper_model,
             settings.whisper_device,
             settings.whisper_compute_type,
+            lang_mode,
         )
     except Exception as exc:
         logger.error("Failed to initialise Faster-Whisper STT: {}", exc)
         raise RuntimeError(f"STT init failed: {exc}") from exc
 
-    # -- TTS: Kokoro 82M ONNX on CPU ---------------------------------------
+    # -- TTS: Sarvam AI streaming (Hindi + English) -------------------------
     try:
-        tts = KokoroTTSService(
-            voice_id=settings.kokoro_voice,
+        tts = SarvamTTSService(
+            api_key=settings.sarvam_api_key,
+            model=settings.sarvam_model,
+            voice_id=settings.sarvam_voice,
+            sample_rate=24000,
+            params=SarvamTTSService.InputParams(
+                language=Language.HI,
+                pace=settings.sarvam_pace,
+                temperature=settings.sarvam_temperature,
+            ),
         )
         logger.info(
-            "TTS ready | voice={}",
-            settings.kokoro_voice,
+            "TTS ready | engine=Sarvam model={} voice={} temp={}",
+            settings.sarvam_model,
+            settings.sarvam_voice,
+            settings.sarvam_temperature,
         )
     except Exception as exc:
-        logger.error("Failed to initialise Kokoro TTS: {}", exc)
+        logger.error("Failed to initialise Sarvam TTS: {}", exc)
         raise RuntimeError(f"TTS init failed: {exc}") from exc
 
     # -- LLM: gpt-oss:20b-cloud via Ollama ---------------------------------
@@ -124,6 +151,7 @@ async def create_pipeline(
         llm = OLLamaLLMService(
             model=settings.ollama_model,
             base_url=settings.ollama_base_url + "/v1",
+            function_call_timeout_secs=30.0,
         )  # OLLamaLLMService expects base_url with /v1 suffix
         logger.info(
             "LLM ready | model={} base_url={}",
@@ -135,11 +163,20 @@ async def create_pipeline(
         raise RuntimeError(f"LLM init failed: {exc}") from exc
 
     # -- Conversation context with system prompt and tools ------------------
-    context = OpenAILLMContext(
-        messages=[{"role": "system", "content": SYSTEM_PROMPT}],
-        tools=TOOL_DEFINITIONS,
+    tools_schema = ToolsSchema(
+        standard_tools=[],
+        custom_tools={AdapterType.SHIM: TOOL_DEFINITIONS},
     )
-    context_aggregator = llm.create_context_aggregator(context)
+    context = LLMContext(
+        messages=[{"role": "system", "content": SYSTEM_PROMPT}],
+        tools=tools_schema,
+    )
+
+    # Build context aggregator pair with VAD (moved from TransportParams)
+    user_params = LLMUserAggregatorParams(vad_analyzer=vad_analyzer)
+    context_aggregator = LLMContextAggregatorPair(
+        context, user_params=user_params
+    )
 
     logger.info(
         "LLM context initialised | {} tool(s) registered",
@@ -148,28 +185,19 @@ async def create_pipeline(
 
     # -- Register function-call handlers ------------------------------------
     # Pipecat dispatches tool calls emitted by the LLM to registered
-    # handlers.  The handler receives the function name, parsed arguments,
-    # and a tool-call ID; it must return a string (the tool result).
+    # handlers.  Each handler receives a FunctionCallParams dataclass.
 
-    async def _handle_function_call(
-        function_name: str,
-        tool_call_id: str,
-        arguments: dict[str, Any],
-        llm_service: Any,
-        context: OpenAILLMContext,
-        result_callback: Any,
-    ) -> None:
+    async def _handle_function_call(params: FunctionCallParams) -> None:
         """Dispatch an LLM tool call to the matching handler.
 
         Args:
-            function_name: Name of the function the LLM wants to call.
-            tool_call_id: Unique ID for this tool invocation.
-            arguments: Parsed JSON arguments from the LLM.
-            llm_service: Reference to the LLM service (unused here).
-            context: The conversation context to append the result to.
-            result_callback: Async callback to send the tool result back
-                into the pipeline.
+            params: FunctionCallParams with function_name, tool_call_id,
+                arguments, llm, context, and result_callback.
         """
+        function_name = params.function_name
+        tool_call_id = params.tool_call_id
+        arguments = dict(params.arguments)
+
         logger.info(
             "Dispatching tool call | name={} id={} args={}",
             function_name,
@@ -207,7 +235,7 @@ async def create_pipeline(
             result_str[:300],
         )
 
-        await result_callback(result_str)
+        await params.result_callback(result_str)
 
         # If end_call was invoked, schedule a graceful pipeline shutdown
         # after a short delay so Maya's farewell speech can finish playing.
@@ -248,16 +276,19 @@ async def create_pipeline(
 
     logger.info("Pipeline assembled | interruptions=True")
 
-    # -- Send initial greeting after pipeline starts -------------------------
-    @task.event_handler("on_first_participant_joined")
-    async def _on_first_participant_joined(transport: Any, participant: Any) -> None:
+    # -- Send initial greeting when client connects -------------------------
+    # In pipecat 0.0.103, PipelineTask does not have an
+    # "on_first_participant_joined" event.  Use the transport-level
+    # "on_client_connected" event instead.
+    @transport.event_handler("on_client_connected")
+    async def _on_client_connected(transport_ref: Any, *args: Any) -> None:
         """Greet the caller as soon as they connect via WebRTC.
 
-        Injects a ``TTSSpeakFrame`` with Maya's greeting so the patient
-        hears a welcome message without needing to speak first.
+        Queues an LLMRunFrame to trigger the LLM to generate Maya's
+        opening greeting from the system prompt.
         """
-        logger.info("First participant joined, sending greeting")
-        await task.queue_frames([context_aggregator.user().get_context_frame()])
+        logger.info("Client connected, sending greeting")
+        await task.queue_frames([LLMRunFrame()])
 
     runner = PipelineRunner()
 

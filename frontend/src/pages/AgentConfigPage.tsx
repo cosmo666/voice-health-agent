@@ -304,13 +304,13 @@ export default function AgentConfigPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Speech-to-Text</CardTitle>
-                <CardDescription>Faster-Whisper configuration</CardDescription>
+                <CardDescription>Faster-Whisper multilingual configuration</CardDescription>
               </CardHeader>
               <CardContent>
                 <dl className="space-y-3">
                   <div className="flex justify-between">
                     <dt className="text-sm text-muted-foreground">Model</dt>
-                    <dd className="text-sm font-medium font-mono">base.en</dd>
+                    <dd className="text-sm font-medium font-mono">base (multilingual)</dd>
                   </div>
                   <Separator />
                   <div className="flex justify-between">
@@ -327,7 +327,7 @@ export default function AgentConfigPage() {
                   <Separator />
                   <div className="flex justify-between">
                     <dt className="text-sm text-muted-foreground">Language</dt>
-                    <dd className="text-sm font-medium">English</dd>
+                    <dd className="text-sm font-medium">Auto-detect (Hindi / English)</dd>
                   </div>
                 </dl>
               </CardContent>
@@ -337,28 +337,33 @@ export default function AgentConfigPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Text-to-Speech</CardTitle>
-                <CardDescription>Kokoro TTS configuration</CardDescription>
+                <CardDescription>Sarvam AI multilingual configuration</CardDescription>
               </CardHeader>
               <CardContent>
                 <dl className="space-y-3">
                   <div className="flex justify-between">
                     <dt className="text-sm text-muted-foreground">Engine</dt>
-                    <dd className="text-sm font-medium">Kokoro-82M (ONNX)</dd>
+                    <dd className="text-sm font-medium">Sarvam AI (bulbul:v3)</dd>
                   </div>
                   <Separator />
                   <div className="flex justify-between">
                     <dt className="text-sm text-muted-foreground">Voice</dt>
-                    <dd className="text-sm font-medium font-mono">af_bella</dd>
+                    <dd className="text-sm font-medium font-mono">anushka</dd>
                   </div>
                   <Separator />
                   <div className="flex justify-between">
-                    <dt className="text-sm text-muted-foreground">Speed</dt>
-                    <dd className="text-sm font-medium font-mono">1.0x</dd>
+                    <dt className="text-sm text-muted-foreground">Temperature</dt>
+                    <dd className="text-sm font-medium font-mono">0.75</dd>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between">
+                    <dt className="text-sm text-muted-foreground">Languages</dt>
+                    <dd className="text-sm font-medium">Hindi (hi-IN) / English (en-IN)</dd>
                   </div>
                   <Separator />
                   <div className="flex justify-between">
                     <dt className="text-sm text-muted-foreground">Runtime</dt>
-                    <dd className="text-sm font-medium">CPU (ONNX)</dd>
+                    <dd className="text-sm font-medium">Cloud API</dd>
                   </div>
                 </dl>
               </CardContent>

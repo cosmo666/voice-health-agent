@@ -5,8 +5,11 @@ talk to Maya through their browser via WebRTC, and she handles appointment booki
 cancellations, rescheduling, insurance questions, and clinic FAQs -- all through
 natural, real-time voice conversation.
 
-Built entirely with open-source tools, runs on a 16GB RAM CPU-only machine with
-no Docker required.
+**Multilingual**: Maya speaks Hindi, English, and Hinglish (code-mixed) -- she
+detects the patient's language and responds naturally in the same language.
+
+Built with open-source tools + Sarvam AI TTS, runs on a 16GB RAM CPU-only machine
+with no Docker required.
 
 ---
 
@@ -27,7 +30,8 @@ over HTTP and WebRTC:
    +----------------------------------------v-----------------------------------------+
    |                        VOICE AGENT  (port 7860)                                   |
    |                                                                                   |
-   |   Mic Audio --> Silero VAD --> SmartTurn v3 --> Faster-Whisper STT (base.en)       |
+   |   Mic Audio --> Silero VAD --> SmartTurn v3 --> Faster-Whisper STT (base)          |
+   |       |                                     (multilingual auto-detect)             |
    |       |                                              |                            |
    |       |                                         [transcript]                      |
    |       |                                              |                            |
@@ -35,7 +39,7 @@ over HTTP and WebRTC:
    |       |                                      |               |                    |
    |       |                                [text response]  [tool_calls]              |
    |       |                                      |               |                    |
-   |       |                              Kokoro TTS (82M)   HTTP calls --------+      |
+   |       |                           Sarvam TTS (bulbul:v3) HTTP calls --------+     |
    |       |                                      |                             |      |
    |       +<-- Audio out (streaming) <-----------+                             |      |
    +---------------------------------------------------------------------------|------+
@@ -68,8 +72,8 @@ over HTTP and WebRTC:
 |----------------|--------------------------------------------------------|-------------|
 | Voice Pipeline | Pipecat (SmallWebRTCTransport + Silero VAD)            | Apache 2.0  |
 | Turn Detection | SmartTurn v3 (AI-powered)                              | Apache 2.0  |
-| STT            | Faster-Whisper `base.en` (CPU, int8)                   | MIT         |
-| TTS            | Kokoro-82M (ONNX, CPU)                                 | Apache 2.0  |
+| STT            | Faster-Whisper `base` multilingual (CPU, int8)         | MIT         |
+| TTS            | Sarvam AI `bulbul:v3` (Hindi + English, cloud API)     | Proprietary |
 | LLM            | gpt-oss:20b-cloud via Ollama                           | Apache 2.0  |
 | RAG            | LlamaIndex + ChromaDB + all-MiniLM-L6-v2              | MIT/Apache  |
 | API            | FastAPI + SQLAlchemy 2.0 async + SQLite                | MIT/BSD     |
@@ -86,10 +90,7 @@ over HTTP and WebRTC:
 - **Python 3.11+** (with `pip`)
 - **Node.js 20+** (with `npm`)
 - **Ollama** (installed and running -- no API key needed)
-- **espeak-ng** (required by Kokoro TTS)
-  - Windows: download from [espeak-ng releases](https://github.com/espeak-ng/espeak-ng/releases)
-  - Linux: `sudo apt-get install espeak-ng`
-  - macOS: `brew install espeak`
+- **Sarvam API key** (free tier at [sarvam.ai](https://www.sarvam.ai/) -- set as `SARVAM_API_KEY` in `.env`)
 
 ### One-Time Setup
 
@@ -163,11 +164,11 @@ Open **three separate terminals** and start each service:
 ```powershell
 # Terminal 1 -- FastAPI Backend (port 8000)
 .venv\Scripts\Activate.ps1
-.venv\Scripts\uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+.venv\Scripts\uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
 
 # Terminal 2 -- Voice Agent + WebRTC UI (port 7860)
 .venv\Scripts\Activate.ps1
-.venv\Scripts\uvicorn agent.main:app --host 0.0.0.0 --port 7860
+.venv\Scripts\uvicorn agent.main:app --host 127.0.0.1 --port 7860
 
 # Terminal 3 -- React Admin Dashboard (port 3000)
 cd frontend; npm run dev
@@ -195,12 +196,20 @@ make run-frontend
 5. Click the **"Connect"** button
 6. Maya greets you -- start talking naturally!
 
-**Try these phrases:**
+**Try these phrases (English):**
 - "I'd like to book an appointment with Dr. Patel"
 - "What insurance plans do you accept?"
 - "Can I cancel my appointment?"
-- "What are your clinic hours?"
 - "I need to see a dermatologist next week"
+
+**Try in Hindi:**
+- "Mujhe Dr. Patel se appointment lena hai"
+- "Aapke clinic ka time kya hai?"
+- "Mera appointment cancel karna hai"
+
+**Try in Hinglish:**
+- "Dr. Sharma ke saath appointment book karo next week"
+- "Insurance policy ke baare mein batao"
 
 ### Admin Dashboard
 
@@ -375,16 +384,17 @@ Maya greets: "Hi, this is Maya at Sunrise Health Clinic..."
 +---------------------------------------------------------------+
 |                   REAL-TIME CONVERSATION LOOP                 |
 |                                                               |
-|  User speaks                                                  |
+|  User speaks (Hindi, English, or Hinglish)                    |
 |    |-> Silero VAD detects speech start                        |
 |    |-> SmartTurn v3 monitors: done talking or just pausing?   |
 |    |-> User stops -> SmartTurn confirms turn complete          |
-|    |-> Faster-Whisper base.en transcribes (~500-800ms)        |
+|    |-> Faster-Whisper base (multilingual) auto-detects lang   |
 |    |-> gpt-oss:20b-cloud processes with tools (streaming)     |
-|    |     |-> If tool_call: execute async, say "One moment..." |
+|    |     |-> Responds in patient's language (per prompt)       |
+|    |     |-> If tool_call: execute async, say "Umm, one sec..." |
 |    |     |-> Feed result back -> get final answer             |
-|    |-> Kokoro-82M streams TTS audio chunks immediately        |
-|    |-> User hears Maya responding in real-time                |
+|    |-> Sarvam TTS streams audio (Hindi or English voice)      |
+|    |-> User hears Maya responding naturally in their language  |
 |                                                               |
 |  IF USER INTERRUPTS (starts talking while Maya speaks):       |
 |    |-> VAD detects new speech                                 |
@@ -393,17 +403,17 @@ Maya greets: "Hi, this is Maya at Sunrise Health Clinic..."
 |    |-> New user input processed normally                      |
 +---------------------------------------------------------------+
 
-Target: <1500ms voice-to-voice latency
-  STT:  ~500-800ms  (Faster-Whisper base.en, CPU, int8)
+Target: <2000ms voice-to-voice latency
+  STT:  ~600-900ms  (Faster-Whisper base multilingual, CPU, int8)
   LLM:  ~300-600ms  (gpt-oss:20b-cloud via Ollama)
-  TTS:  ~200-400ms  (Kokoro-82M ONNX, CPU, streaming)
+  TTS:  ~300-500ms  (Sarvam AI bulbul:v3, WebSocket streaming)
 ```
 
 ---
 
 ## LLM Tools
 
-Maya has access to five function-calling tools:
+Maya has access to six function-calling tools:
 
 | Tool                      | Description                                    |
 |---------------------------|------------------------------------------------|
@@ -412,6 +422,7 @@ Maya has access to five function-calling tools:
 | `cancel_appointment`      | Cancel an existing appointment by phone        |
 | `search_clinic_info`      | Search the RAG knowledge base for clinic info  |
 | `escalate_to_human`       | Escalate to a human agent with reason/urgency  |
+| `end_call`                | End the call after patient says goodbye         |
 
 ---
 
@@ -519,8 +530,11 @@ Key variables:
 | `DATABASE_URL`         | `sqlite+aiosqlite:///./clinic.db`  | SQLAlchemy database URL  |
 | `OLLAMA_BASE_URL`      | `http://localhost:11434`           | Ollama API endpoint      |
 | `OLLAMA_MODEL`         | `gpt-oss:20b-cloud`               | LLM model tag            |
-| `WHISPER_MODEL`        | `base.en`                          | Faster-Whisper model     |
-| `KOKORO_VOICE`         | `af_bella`                         | TTS voice preset         |
+| `WHISPER_MODEL`        | `base`                             | Faster-Whisper model (multilingual) |
+| `WHISPER_LANGUAGE`     | *(empty)*                          | STT language (empty = auto-detect)  |
+| `SARVAM_API_KEY`       | *(required)*                       | Sarvam AI API key for TTS |
+| `SARVAM_MODEL`         | `bulbul:v3`                        | Sarvam TTS model          |
+| `SARVAM_VOICE`         | `anushka`                          | TTS voice (Hindi female)  |
 | `LOG_LEVEL`            | `INFO`                             | Loguru log level         |
 | `LANGFUSE_PUBLIC_KEY`  | *(empty)*                          | LangFuse key (optional)  |
 
@@ -564,18 +578,49 @@ This project is optimized for a developer machine with:
 
 Approximate memory usage:
 
-| Component                    | RAM     |
-|------------------------------|---------|
-| Faster-Whisper base.en (int8)| ~150 MB |
-| Kokoro-82M TTS (ONNX)       | ~200 MB |
-| Silero VAD                   | ~50 MB  |
-| sentence-transformers        | ~90 MB  |
-| SQLite + ChromaDB            | ~50 MB  |
-| Python services + frontend   | ~500 MB |
-| **Total**                    | **~1 GB** |
+| Component                         | RAM     |
+|-----------------------------------|---------|
+| Faster-Whisper base multilingual (int8) | ~300 MB |
+| Sarvam TTS (cloud API)           | ~5 MB   |
+| Silero VAD                        | ~50 MB  |
+| sentence-transformers             | ~90 MB  |
+| SQLite + ChromaDB                 | ~50 MB  |
+| Python services + frontend        | ~500 MB |
+| **Total**                         | **~1 GB** |
 
-The LLM (gpt-oss:20b-cloud) runs on Ollama's cloud infrastructure and
-consumes zero local RAM for model weights.
+The LLM (gpt-oss:20b-cloud) runs on Ollama's cloud infrastructure and Sarvam TTS
+runs on Sarvam's cloud -- both consume zero local RAM for model weights. Internet
+is required for LLM and TTS.
+
+---
+
+## Multilingual Support
+
+Maya speaks **Hindi**, **English**, and **Hinglish** (code-mixed Hindi-English).
+
+### How It Works
+
+1. **STT (Faster-Whisper `base` multilingual)**: Transcribes speech in any language.
+   The multilingual `base` model handles both Hindi and English audio. Set
+   `WHISPER_LANGUAGE` in `.env` to force a specific language, or leave empty
+   to use the default.
+
+2. **LLM (gpt-oss:20b-cloud)**: The system prompt instructs Maya to detect the
+   patient's language and respond in the same language. She uses casual, natural
+   phrasing with Hindi fillers ("Accha", "Bilkul") or English fillers ("Gotcha",
+   "Hmm") as appropriate.
+
+3. **TTS (Sarvam AI `bulbul:v3`)**: Sarvam specializes in Indian languages. The
+   `anushka` voice naturally handles both Hindi and English text with natural
+   prosody. Temperature is set to 0.75 for human-like variation.
+
+### Supported Languages
+
+| Language | STT | LLM Response | TTS Voice |
+|----------|-----|-------------|-----------|
+| English  | Auto-detect | English (casual Indian English) | anushka (en-IN) |
+| Hindi    | Auto-detect | Hindi (casual spoken Hindi) | anushka (hi-IN) |
+| Hinglish | Auto-detect | Hinglish (natural code-mix) | anushka (hi-IN) |
 
 ---
 

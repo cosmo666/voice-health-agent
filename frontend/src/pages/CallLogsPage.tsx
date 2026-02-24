@@ -1,5 +1,20 @@
 import { useState, useCallback } from 'react'
-import { Search, ChevronLeft, ChevronRight, Phone, AlertTriangle, FileText } from 'lucide-react'
+import {
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Phone,
+  AlertTriangle,
+  FileText,
+  Brain,
+  Globe,
+  Target,
+  CheckCircle2,
+  Clock,
+  Lightbulb,
+  Star,
+  TrendingUp,
+} from 'lucide-react'
 import {
   Card,
   CardContent,
@@ -24,8 +39,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCallLogs } from '@/hooks/use-calls'
-import type { CallLog } from '@/lib/api'
+import type { CallLog, AIInsights } from '@/lib/api'
 
 const PER_PAGE = 20
 
@@ -76,6 +92,241 @@ function SentimentBadge({ score }: { score: number | null }) {
     <Badge className="bg-red-500/15 text-red-700 border-red-500/25 hover:bg-red-500/25 dark:text-red-400">
       Negative
     </Badge>
+  )
+}
+
+/** Badge for resolution status. */
+function ResolutionBadge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    resolved:
+      'bg-emerald-500/15 text-emerald-700 border-emerald-500/25 dark:text-emerald-400',
+    partially_resolved:
+      'bg-amber-500/15 text-amber-700 border-amber-500/25 dark:text-amber-400',
+    unresolved:
+      'bg-red-500/15 text-red-700 border-red-500/25 dark:text-red-400',
+    escalated:
+      'bg-purple-500/15 text-purple-700 border-purple-500/25 dark:text-purple-400',
+  }
+  const labels: Record<string, string> = {
+    resolved: 'Resolved',
+    partially_resolved: 'Partially Resolved',
+    unresolved: 'Unresolved',
+    escalated: 'Escalated',
+  }
+  return (
+    <Badge className={colors[status] ?? colors.unresolved}>
+      {labels[status] ?? status}
+    </Badge>
+  )
+}
+
+/** Badge for performance ratings. */
+function RatingBadge({ rating }: { rating: string }) {
+  const colors: Record<string, string> = {
+    excellent:
+      'bg-emerald-500/15 text-emerald-700 border-emerald-500/25 dark:text-emerald-400',
+    good: 'bg-blue-500/15 text-blue-700 border-blue-500/25 dark:text-blue-400',
+    high: 'bg-emerald-500/15 text-emerald-700 border-emerald-500/25 dark:text-emerald-400',
+    medium:
+      'bg-amber-500/15 text-amber-700 border-amber-500/25 dark:text-amber-400',
+    fair: 'bg-amber-500/15 text-amber-700 border-amber-500/25 dark:text-amber-400',
+    low: 'bg-red-500/15 text-red-700 border-red-500/25 dark:text-red-400',
+    poor: 'bg-red-500/15 text-red-700 border-red-500/25 dark:text-red-400',
+  }
+  return (
+    <Badge className={colors[rating] ?? 'bg-muted text-muted-foreground'}>
+      {rating.charAt(0).toUpperCase() + rating.slice(1)}
+    </Badge>
+  )
+}
+
+/** AI Insights panel displayed inside the call detail dialog. */
+function AIInsightsPanel({ insights }: { insights: AIInsights }) {
+  return (
+    <div className="space-y-4">
+      {/* Intent & Resolution Row */}
+      <div className="grid grid-cols-2 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Target className="h-4 w-4 text-blue-500" />
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Patient Intent
+              </span>
+            </div>
+            <p className="text-sm">{insights.patient_intent}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Resolution
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <ResolutionBadge status={insights.resolution_status} />
+              <span className="text-xs text-muted-foreground">
+                Satisfaction:{' '}
+                <RatingBadge rating={insights.patient_satisfaction} />
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Topics & Language */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Brain className="h-4 w-4 text-purple-500" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Topics Discussed
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {insights.topics.map((topic) => (
+              <Badge key={topic} variant="outline" className="text-xs">
+                {topic}
+              </Badge>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Globe className="h-4 w-4 text-teal-500" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Language
+            </span>
+          </div>
+          <Badge variant="secondary">
+            {insights.language_detected.charAt(0).toUpperCase() +
+              insights.language_detected.slice(1)}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Key Moments */}
+      {insights.key_moments && insights.key_moments.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Clock className="h-4 w-4 text-orange-500" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Key Moments
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {insights.key_moments.map((moment, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-2 text-sm"
+              >
+                <span className="text-xs font-mono text-muted-foreground min-w-[60px]">
+                  {moment.timestamp}
+                </span>
+                <span>{moment.event}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Action Items */}
+      {insights.action_items && insights.action_items.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp className="h-4 w-4 text-blue-500" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Action Items
+            </span>
+          </div>
+          <ul className="space-y-1">
+            {insights.action_items.map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm">
+                <span className="text-muted-foreground mt-0.5">-</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <Separator />
+
+      {/* Agent Performance */}
+      {insights.agent_performance && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Star className="h-4 w-4 text-yellow-500" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Agent Performance
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-1">
+                Response Quality
+              </p>
+              <RatingBadge
+                rating={insights.agent_performance.response_quality}
+              />
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-1">Empathy</p>
+              <RatingBadge
+                rating={insights.agent_performance.empathy_score}
+              />
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-1">Accuracy</p>
+              <RatingBadge rating={insights.agent_performance.accuracy} />
+            </div>
+          </div>
+          {insights.agent_performance.areas_for_improvement &&
+            insights.agent_performance.areas_for_improvement.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs text-muted-foreground mb-1">
+                  Areas for Improvement:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {insights.agent_performance.areas_for_improvement.map(
+                    (area, i) => (
+                      <Badge
+                        key={i}
+                        variant="outline"
+                        className="text-xs border-amber-500/25 text-amber-700 dark:text-amber-400"
+                      >
+                        {area}
+                      </Badge>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
+        </div>
+      )}
+
+      {/* Recommendations */}
+      {insights.recommendations && insights.recommendations.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Lightbulb className="h-4 w-4 text-yellow-500" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Recommendations
+            </span>
+          </div>
+          <ul className="space-y-1">
+            {insights.recommendations.map((rec, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm">
+                <span className="text-muted-foreground mt-0.5">-</span>
+                <span>{rec}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -134,7 +385,8 @@ export default function CallLogsPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Call Logs</h1>
         <p className="text-muted-foreground mt-1">
-          Browse and search all recorded voice interactions.
+          Browse and search all recorded voice interactions with AI-powered
+          insights.
         </p>
       </div>
 
@@ -294,7 +546,7 @@ export default function CallLogsPage() {
         }}
       >
         {selectedCall && (
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5" />
@@ -331,6 +583,16 @@ export default function CallLogsPage() {
                     </Badge>
                   )}
                 </div>
+                {selectedCall.ai_insights && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">
+                      Language:
+                    </span>
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedCall.ai_insights.language_detected}
+                    </Badge>
+                  </div>
+                )}
               </div>
 
               {/* Tools Used */}
@@ -349,31 +611,85 @@ export default function CallLogsPage() {
 
               <Separator />
 
-              {/* Summary */}
-              {selectedCall.summary && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2">Summary</h4>
+              {/* Tabbed Content: AI Insights | Summary | Transcript */}
+              <Tabs
+                defaultValue={selectedCall.ai_insights ? 'insights' : 'transcript'}
+                className="w-full"
+              >
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger
+                    value="insights"
+                    className="flex items-center gap-1.5"
+                    disabled={!selectedCall.ai_insights}
+                  >
+                    <Brain className="h-3.5 w-3.5" />
+                    AI Insights
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="summary"
+                    className="flex items-center gap-1.5"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Summary
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="transcript"
+                    className="flex items-center gap-1.5"
+                  >
+                    <Phone className="h-3.5 w-3.5" />
+                    Transcript
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* AI Insights Tab */}
+                <TabsContent value="insights" className="mt-4">
+                  {selectedCall.ai_insights ? (
+                    <AIInsightsPanel insights={selectedCall.ai_insights} />
+                  ) : (
+                    <Card>
+                      <CardContent className="p-8 text-center text-muted-foreground">
+                        <Brain className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                        <p className="text-sm">
+                          AI insights are being generated. Check back in a
+                          moment.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                {/* Summary Tab */}
+                <TabsContent value="summary" className="mt-4">
+                  {selectedCall.summary ? (
+                    <Card>
+                      <CardContent className="p-4">
+                        <p className="text-sm leading-relaxed">
+                          {selectedCall.summary}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <Card>
+                      <CardContent className="p-8 text-center text-muted-foreground">
+                        <p className="text-sm">
+                          Summary is being generated...
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                {/* Transcript Tab */}
+                <TabsContent value="transcript" className="mt-4">
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm leading-relaxed">
-                        {selectedCall.summary}
-                      </p>
+                      <pre className="text-sm whitespace-pre-wrap leading-relaxed font-mono text-muted-foreground">
+                        {selectedCall.transcript || 'No transcript available.'}
+                      </pre>
                     </CardContent>
                   </Card>
-                </div>
-              )}
-
-              {/* Transcript */}
-              <div>
-                <h4 className="text-sm font-medium mb-2">Transcript</h4>
-                <Card>
-                  <CardContent className="p-4">
-                    <pre className="text-sm whitespace-pre-wrap leading-relaxed font-mono text-muted-foreground">
-                      {selectedCall.transcript || 'No transcript available.'}
-                    </pre>
-                  </CardContent>
-                </Card>
-              </div>
+                </TabsContent>
+              </Tabs>
             </div>
           </DialogContent>
         )}

@@ -238,6 +238,7 @@ class CallLog(Base):
     tools_used: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     escalated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     sentiment_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_insights: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow
     )

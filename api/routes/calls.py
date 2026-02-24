@@ -76,6 +76,7 @@ async def save_call_log(
         tools_used=call_log.tools_used or [],
         escalated=call_log.escalated,
         sentiment_score=call_log.sentiment_score,
+        ai_insights=call_log.ai_insights,
         created_at=call_log.created_at,
     )
 
@@ -141,6 +142,7 @@ async def list_call_logs(
                 tools_used=log.tools_used or [],
                 escalated=log.escalated,
                 sentiment_score=log.sentiment_score,
+                ai_insights=log.ai_insights,
                 created_at=log.created_at,
             )
             for log in call_logs
@@ -191,5 +193,6 @@ async def get_call_log(
         tools_used=call_log.tools_used or [],
         escalated=call_log.escalated,
         sentiment_score=call_log.sentiment_score,
+        ai_insights=call_log.ai_insights,
         created_at=call_log.created_at,
     )

@@ -10,14 +10,17 @@ python-dotenv>=1.0.1
 httpx>=0.28.0
 
 # Voice Pipeline — Pipecat
-pipecat-ai[silero,webrtc,kokoro]>=0.0.55
+pipecat-ai[silero,webrtc,sarvam]>=0.0.55
 pipecat-ai-small-webrtc-prebuilt>=0.0.5
 
-# STT — Faster-Whisper (CPU)
+# STT — Faster-Whisper (CPU, multilingual)
 faster-whisper>=1.1.0
 
-# TTS — Kokoro (CPU ONNX)
-onnxruntime>=1.20.0
+# TTS — Sarvam AI (cloud API, Hindi + English)
+# No local model needed — inference runs on Sarvam cloud
+
+# Language detection (for dynamic TTS voice/language selection)
+langdetect>=1.0.9
 
 # RAG
 llama-index>=0.12.0

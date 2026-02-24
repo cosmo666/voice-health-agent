@@ -1,4 +1,13 @@
-import { AlertTriangle } from 'lucide-react'
+import {
+  AlertTriangle,
+  Brain,
+  Globe,
+  CheckCircle2,
+  Star,
+  Lightbulb,
+  TrendingUp,
+  MessageSquare,
+} from 'lucide-react'
 import {
   Card,
   CardContent,
@@ -6,8 +15,11 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAnalytics } from '@/hooks/use-analytics'
+import type { InsightsAggregate } from '@/lib/api'
 import {
   BarChart,
   Bar,
@@ -39,12 +51,335 @@ const COLORS = {
 /** Sentiment pie chart colors. */
 const SENTIMENT_COLORS = [COLORS.green, COLORS.amber, COLORS.red]
 
+/** Resolution status colors for pie chart. */
+const RESOLUTION_COLORS = [COLORS.green, COLORS.amber, COLORS.red, COLORS.purple]
+
+/** Language pie chart colors. */
+const LANGUAGE_COLORS = [COLORS.blue, COLORS.teal, COLORS.purple]
+
 /** Chart skeleton loader. */
 function ChartSkeleton() {
   return (
     <div className="space-y-3 p-4">
       <Skeleton className="h-4 w-32" />
       <Skeleton className="h-[200px] w-full rounded-md" />
+    </div>
+  )
+}
+
+/** Display aggregate AI insights from all analyzed calls. */
+function InsightsSection({ insights }: { insights: InsightsAggregate }) {
+  return (
+    <div className="space-y-6">
+      {/* Section Header */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Brain className="h-5 w-5 text-purple-500" />
+          <h2 className="text-xl font-semibold">AI Speech Insights</h2>
+        </div>
+        <Badge variant="secondary" className="text-xs">
+          {insights.calls_with_insights} call{insights.calls_with_insights !== 1 ? 's' : ''} analyzed
+        </Badge>
+        <Badge className="bg-purple-500/15 text-purple-700 border-purple-500/25 dark:text-purple-400 text-xs">
+          Powered by qwen3-next:80b
+        </Badge>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Top Topics — Horizontal Bar Chart */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-blue-500" />
+              Top Discussion Topics
+            </CardTitle>
+            <CardDescription>
+              Most frequently discussed subjects across all calls
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {insights.top_topics.length > 0 ? (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart
+                  data={insights.top_topics}
+                  layout="vertical"
+                  margin={{ top: 5, right: 10, left: 20, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="topic"
+                    tick={{ fontSize: 11 }}
+                    width={130}
+                  />
+                  <RechartsTooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Bar
+                    dataKey="count"
+                    fill={COLORS.blue}
+                    radius={[0, 4, 4, 0]}
+                    name="Mentions"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[260px] text-muted-foreground text-sm">
+                No topic data yet.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Resolution Status — Pie Chart */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              Resolution Status
+            </CardTitle>
+            <CardDescription>
+              How effectively were patient issues resolved?
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {insights.resolution_breakdown.length > 0 ? (
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={insights.resolution_breakdown}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={90}
+                    paddingAngle={3}
+                    dataKey="count"
+                    nameKey="status"
+                    label={({
+                      status,
+                      percent,
+                    }: {
+                      status: string
+                      percent: number
+                    }) => `${status} ${(percent * 100).toFixed(0)}%`}
+                    labelLine={false}
+                  >
+                    {insights.resolution_breakdown.map((_entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={RESOLUTION_COLORS[index % RESOLUTION_COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[260px] text-muted-foreground text-sm">
+                No resolution data yet.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Language Distribution — Pie Chart */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Globe className="h-4 w-4 text-teal-500" />
+              Language Distribution
+            </CardTitle>
+            <CardDescription>
+              Languages used by patients across calls
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {insights.language_breakdown.length > 0 ? (
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={insights.language_breakdown}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={90}
+                    paddingAngle={3}
+                    dataKey="count"
+                    nameKey="language"
+                    label={({
+                      language,
+                      percent,
+                    }: {
+                      language: string
+                      percent: number
+                    }) => `${language} ${(percent * 100).toFixed(0)}%`}
+                    labelLine={false}
+                  >
+                    {insights.language_breakdown.map((_entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={LANGUAGE_COLORS[index % LANGUAGE_COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[260px] text-muted-foreground text-sm">
+                No language data yet.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Agent Performance Summary */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Star className="h-4 w-4 text-yellow-500" />
+              Agent Performance
+            </CardTitle>
+            <CardDescription>
+              Overall AI agent quality metrics
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-center justify-center h-[260px]">
+              {(() => {
+                const quality = insights.avg_agent_quality
+                const color =
+                  quality === 'excellent'
+                    ? 'text-emerald-500'
+                    : quality === 'good'
+                      ? 'text-blue-500'
+                      : quality === 'fair'
+                        ? 'text-amber-500'
+                        : quality === 'poor'
+                          ? 'text-red-500'
+                          : 'text-muted-foreground'
+                return (
+                  <>
+                    <div className={`text-4xl font-bold tracking-tight ${color}`}>
+                      {quality.charAt(0).toUpperCase() + quality.slice(1)}
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Average Response Quality
+                    </p>
+
+                    {/* Patient Satisfaction Breakdown */}
+                    {insights.satisfaction_breakdown.length > 0 && (
+                      <div className="mt-6 w-full max-w-xs">
+                        <p className="text-xs text-muted-foreground mb-2 text-center">
+                          Patient Satisfaction
+                        </p>
+                        <div className="flex gap-2 justify-center">
+                          {insights.satisfaction_breakdown.map((s) => (
+                            <Badge
+                              key={s.level}
+                              variant="outline"
+                              className={
+                                s.level === 'high'
+                                  ? 'border-emerald-500/25 text-emerald-700 dark:text-emerald-400'
+                                  : s.level === 'medium'
+                                    ? 'border-amber-500/25 text-amber-700 dark:text-amber-400'
+                                    : 'border-red-500/25 text-red-700 dark:text-red-400'
+                              }
+                            >
+                              {s.level}: {s.count}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Action Items & Recommendations — Full Width */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Action Items */}
+        {insights.common_action_items.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-blue-500" />
+                Common Action Items
+              </CardTitle>
+              <CardDescription>
+                Follow-up tasks identified across recent calls
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {insights.common_action_items.map((item, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start gap-2 text-sm"
+                  >
+                    <span className="text-blue-500 mt-0.5 text-xs">-</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Recommendations */}
+        {insights.common_recommendations.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Lightbulb className="h-4 w-4 text-yellow-500" />
+                AI Recommendations
+              </CardTitle>
+              <CardDescription>
+                Suggestions for improving clinic operations
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {insights.common_recommendations.map((rec, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start gap-2 text-sm"
+                  >
+                    <span className="text-yellow-500 mt-0.5 text-xs">-</span>
+                    <span>{rec}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   )
 }
@@ -58,7 +393,8 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
           <p className="text-muted-foreground mt-1">
-            Visualize voice agent performance metrics.
+            Visualize voice agent performance metrics and AI-powered speech
+            insights.
           </p>
         </div>
         <Card>
@@ -80,7 +416,8 @@ export default function AnalyticsPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
         <p className="text-muted-foreground mt-1">
-          Visualize voice agent performance metrics.
+          Visualize voice agent performance metrics and AI-powered speech
+          insights.
         </p>
       </div>
 
@@ -92,6 +429,14 @@ export default function AnalyticsPage() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* AI Speech Insights Section */}
+      {analytics?.insights_aggregate && (
+        <>
+          <InsightsSection insights={analytics.insights_aggregate} />
+          <Separator />
+        </>
       )}
 
       <div className="grid gap-6 md:grid-cols-2">

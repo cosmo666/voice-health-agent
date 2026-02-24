@@ -111,7 +111,9 @@ async def health() -> JSONResponse:
             "config": {
                 "llm_model": settings.ollama_model,
                 "stt_model": settings.whisper_model,
-                "tts_voice": settings.kokoro_voice,
+                "stt_language": settings.whisper_language or "auto-detect",
+                "tts_engine": f"Sarvam {settings.sarvam_model}",
+                "tts_voice": settings.sarvam_voice,
                 "vad_stop_secs": settings.vad_stop_secs,
             },
         }
@@ -198,7 +200,9 @@ async def offer(session_id: str, request: Request) -> JSONResponse:
             """
             logger.info("New WebRTC connection: {}", webrtc_connection.pc_id)
 
-            # -- Build VAD parameters -------------------------------------------
+            # -- Build transport parameters (audio only, no video) --------------
+            # VAD is passed to the LLMContextAggregatorPair via pipeline.py
+            # (not TransportParams) per pipecat 0.0.103 API.
             vad_analyzer = SileroVADAnalyzer(
                 params=VADParams(
                     stop_secs=settings.vad_stop_secs,
@@ -207,37 +211,12 @@ async def offer(session_id: str, request: Request) -> JSONResponse:
                     min_volume=settings.vad_min_volume,
                 )
             )
-
-            # -- Build transport parameters (audio only, no video) --------------
             transport_params = TransportParams(
                 audio_in_enabled=True,
                 audio_out_enabled=True,
                 video_in_enabled=False,
                 video_out_enabled=False,
-                vad_enabled=True,
-                vad_analyzer=vad_analyzer,
             )
-
-            # Attempt to add SmartTurn v3 for AI-powered turn detection.
-            try:
-                from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import (
-                    LocalSmartTurnAnalyzerV3,
-                )
-                from pipecat.turns.user_stop import TurnAnalyzerUserTurnStopStrategy
-
-                transport_params.turn_stop_strategy = TurnAnalyzerUserTurnStopStrategy(
-                    turn_analyzer=LocalSmartTurnAnalyzerV3()
-                )
-                logger.info("SmartTurn v3 enabled for AI-powered turn detection")
-            except ImportError:
-                logger.info(
-                    "SmartTurn v3 not available -- using silence-based VAD only"
-                )
-            except Exception as turn_exc:
-                logger.warning(
-                    "SmartTurn v3 init failed ({}), falling back to silence VAD",
-                    turn_exc,
-                )
 
             # -- Create transport -----------------------------------------------
             transport = SmallWebRTCTransport(
@@ -250,7 +229,7 @@ async def offer(session_id: str, request: Request) -> JSONResponse:
 
             # -- Create the full voice pipeline ---------------------------------
             task, runner, llm_context = await create_pipeline(
-                transport, conversation_ctx
+                transport, conversation_ctx, vad_analyzer=vad_analyzer
             )
             sid = webrtc_connection.pc_id or session_id
             _active_sessions[sid] = {
@@ -470,12 +449,12 @@ async def _save_call_log(ctx: ConversationContext) -> None:
 async def _on_startup() -> None:
     """Log configuration on server start."""
     logger.info(
-        "Maya Voice Agent starting | host={} port={} model={} stt={} tts={}",
-        settings.agent_host,
+        "Maya Voice Agent ready | http://localhost:{} | model={} stt={} tts=Sarvam {} voice={}",
         settings.agent_port,
         settings.ollama_model,
         settings.whisper_model,
-        settings.kokoro_voice,
+        settings.sarvam_model,
+        settings.sarvam_voice,
     )
 
 

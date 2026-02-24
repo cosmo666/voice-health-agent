@@ -18,10 +18,10 @@ setup:           ## One-time: create venv, install deps, setup DB, seed data, in
 	$(VENV_BIN)/python scripts/seed_knowledge_base.py
 
 run-api:         ## Start FastAPI backend on port 8000
-	$(VENV_BIN)/uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+	$(VENV_BIN)/uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
 
 run-agent:       ## Start Pipecat voice agent with WebRTC UI on port 7860
-	$(VENV_BIN)/uvicorn agent.main:app --host 0.0.0.0 --port 7860
+	$(VENV_BIN)/uvicorn agent.main:app --host 127.0.0.1 --port 7860
 
 run-frontend:    ## Start React dev server on port 3000
 	cd frontend && npm run dev

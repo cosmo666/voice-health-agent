@@ -46,7 +46,7 @@ class AgentSettings(BaseSettings):
 
     # ── Agent Server ────────────────────────────────────────────────────
     agent_host: str = Field(
-        default="0.0.0.0",
+        default="127.0.0.1",
         description="Bind host for the agent's FastAPI/Uvicorn server.",
     )
     agent_port: int = Field(
@@ -54,10 +54,10 @@ class AgentSettings(BaseSettings):
         description="Port for the agent's FastAPI/Uvicorn server.",
     )
 
-    # ── STT (Faster-Whisper) ────────────────────────────────────────────
+    # ── STT (Faster-Whisper, multilingual) ───────────────────────────────
     whisper_model: str = Field(
-        default="base.en",
-        description="Faster-Whisper model size. Use base.en for CPU.",
+        default="base",
+        description="Faster-Whisper model size. 'base' for multilingual auto-detect.",
     )
     whisper_device: str = Field(
         default="cpu",
@@ -68,20 +68,34 @@ class AgentSettings(BaseSettings):
         description="CTranslate2 quantisation. int8 for CPU efficiency.",
     )
     whisper_language: str = Field(
-        default="en",
-        description="Language code for speech recognition.",
+        default="",
+        description="Language code for STT. Empty string = auto-detect (Hindi/English).",
     )
 
-    # ── TTS (Kokoro 82M ONNX) ──────────────────────────────────────────
-    kokoro_voice: str = Field(
-        default="af_bella",
-        description="Kokoro voice preset name.",
+    # ── TTS (Sarvam AI — Indian language specialist) ──────────────────
+    sarvam_api_key: str = Field(
+        default="",
+        description="Sarvam AI API key. Required for TTS.",
     )
-    kokoro_speed: float = Field(
-        default=1.0,
+    sarvam_model: str = Field(
+        default="bulbul:v3",
+        description="Sarvam TTS model. bulbul:v3 = latest, 24kHz, 24 voices.",
+    )
+    sarvam_voice: str = Field(
+        default="priya",
+        description="Sarvam TTS voice ID. 'anushka' = female, natural Hindi.",
+    )
+    sarvam_temperature: float = Field(
+        default=0.75,
+        ge=0.01,
+        le=1.0,
+        description="TTS temperature. Higher = more natural prosody variation.",
+    )
+    sarvam_pace: float = Field(
+        default=1.05,
         ge=0.5,
         le=2.0,
-        description="TTS speaking rate multiplier.",
+        description="TTS speaking pace multiplier.",
     )
 
     # ── VAD (Silero) ────────────────────────────────────────────────────
@@ -150,11 +164,12 @@ def _load_settings() -> AgentSettings:
     try:
         _settings = AgentSettings()
         logger.info(
-            "Agent settings loaded | model={} | api={} | whisper={} | voice={}",
+            "Agent settings loaded | model={} | api={} | whisper={} | tts={} voice={}",
             _settings.ollama_model,
             _settings.api_base_url,
             _settings.whisper_model,
-            _settings.kokoro_voice,
+            _settings.sarvam_model,
+            _settings.sarvam_voice,
         )
         return _settings
     except Exception as exc:

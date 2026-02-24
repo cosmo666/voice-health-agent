@@ -54,9 +54,9 @@ async def handle_check_available_slots(args: dict[str, Any]) -> str:
     Returns:
         JSON string with the list of available slots or an error message.
     """
-    doctor_name: str = args.get("doctor_name", "")
-    visit_type: str = args.get("visit_type", "general")
-    preferred_date: str | None = args.get("preferred_date")
+    doctor_name: str = args.get("doctor_name") or args.get("doctor") or args.get("doctor_id") or ""
+    visit_type: str = args.get("visit_type") or args.get("type") or "general"
+    preferred_date: str | None = args.get("preferred_date") or args.get("date") or None
 
     params: dict[str, str] = {
         "doctor_name": doctor_name,
@@ -66,10 +66,11 @@ async def handle_check_available_slots(args: dict[str, Any]) -> str:
         params["date"] = preferred_date
 
     logger.info(
-        "Tool check_available_slots | doctor={} type={} date={}",
+        "Tool check_available_slots | doctor={} type={} date={} (raw_args={})",
         doctor_name,
         visit_type,
         preferred_date or "any",
+        json.dumps(args)[:200],
     )
 
     try:
@@ -123,23 +124,46 @@ async def handle_book_appointment(args: dict[str, Any]) -> str:
     Returns:
         JSON string with the created appointment data or an error message.
     """
+    # Resolve alternate parameter names the LLM may use
+    patient_phone = (
+        args.get("patient_phone")
+        or args.get("patient_contact")
+        or args.get("phone")
+        or args.get("phone_number")
+        or ""
+    )
+    doctor_name = (
+        args.get("doctor_name")
+        or args.get("doctor")
+        or args.get("doctor_id")
+        or ""
+    )
+    # Handle slot_datetime OR separate date+time fields
+    slot_datetime = args.get("slot_datetime") or args.get("datetime") or ""
+    if not slot_datetime:
+        date_val = args.get("date") or args.get("preferred_date") or ""
+        time_val = args.get("time") or args.get("start_time") or ""
+        if date_val and time_val:
+            slot_datetime = f"{date_val}T{time_val}:00" if len(time_val) <= 5 else f"{date_val}T{time_val}"
+
     payload: dict[str, Any] = {
-        "patient_name": args.get("patient_name", ""),
-        "patient_phone": args.get("patient_phone", ""),
-        "doctor_name": args.get("doctor_name", ""),
-        "slot_datetime": args.get("slot_datetime", ""),
-        "visit_type": args.get("visit_type", "general"),
+        "patient_name": args.get("patient_name") or args.get("name") or "",
+        "patient_phone": patient_phone,
+        "doctor_name": doctor_name,
+        "slot_datetime": slot_datetime,
+        "visit_type": args.get("visit_type") or args.get("type") or "general",
     }
     if args.get("notes"):
         payload["notes"] = args["notes"]
 
     logger.info(
-        "Tool book_appointment | patient={} phone={} doctor={} slot={} type={}",
+        "Tool book_appointment | patient={} phone={} doctor={} slot={} type={} (raw_args={})",
         payload["patient_name"],
         payload["patient_phone"],
         payload["doctor_name"],
         payload["slot_datetime"],
         payload["visit_type"],
+        json.dumps(args)[:300],
     )
 
     try:
@@ -194,7 +218,13 @@ async def handle_cancel_appointment(args: dict[str, Any]) -> str:
     Returns:
         JSON string confirming the cancellation or an error message.
     """
-    patient_phone: str = args.get("patient_phone", "")
+    patient_phone: str = (
+        args.get("patient_phone")
+        or args.get("patient_contact")
+        or args.get("phone")
+        or args.get("phone_number")
+        or ""
+    )
     reason: str | None = args.get("reason")
 
     params: dict[str, str] = {"patient_phone": patient_phone}
@@ -202,9 +232,10 @@ async def handle_cancel_appointment(args: dict[str, Any]) -> str:
         params["reason"] = reason
 
     logger.info(
-        "Tool cancel_appointment | phone={} reason={}",
+        "Tool cancel_appointment | phone={} reason={} (raw_args={})",
         patient_phone,
         reason or "none",
+        json.dumps(args)[:200],
     )
 
     try:

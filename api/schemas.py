@@ -158,6 +158,7 @@ class CallLogResponse(BaseModel):
     tools_used: list[str] = Field(default_factory=list)
     escalated: bool
     sentiment_score: Optional[float] = None
+    ai_insights: Optional[dict] = None
     created_at: datetime
 
 
